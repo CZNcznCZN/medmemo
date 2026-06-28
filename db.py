@@ -1014,6 +1014,22 @@ def get_review_stats(tag=None):
                 WHERE ws.active = 1 {wrong_tag_clause}""",
             wrong_params,
         ).fetchone()["n"]
+        weak_points = [
+            dict(r) for r in c.execute(
+                f"""SELECT k.id, k.title, k.tag,
+                           COUNT(DISTINCT ws.card_id) AS active_wrong_cards,
+                           SUM(ws.wrong_count) AS wrong_count,
+                           MAX(ws.updated_at) AS updated_at
+                    FROM wrong_card_state ws
+                    JOIN cards c ON c.id = ws.card_id
+                    JOIN knowledge_points k ON k.id = c.point_id
+                    WHERE ws.active = 1 {wrong_tag_clause}
+                    GROUP BY k.id, k.title, k.tag
+                    ORDER BY wrong_count DESC, active_wrong_cards DESC, updated_at DESC
+                    LIMIT 5""",
+                wrong_params,
+            )
+        ]
     correct = by_rating.get("good", 0) + by_rating.get("easy", 0)
     return {
         "total_reviews": total,
@@ -1023,6 +1039,7 @@ def get_review_stats(tag=None):
         "easy": by_rating.get("easy", 0),
         "accuracy": round(correct / total, 2) if total else 0,
         "wrong_cards": wrong_cards,
+        "weak_points": weak_points,
     }
 
 

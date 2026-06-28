@@ -199,6 +199,7 @@ async function loadStats() {
       const accEl = document.getElementById("statAccuracy");
       const wrongEl = document.getElementById("statWrong");
       if (accEl) accEl.textContent = rs.total_reviews > 0 ? `${Math.round(rs.accuracy * 100)}%` : "-";
+      renderWeakPointPanel(rs.weak_points || []);
       if (wrongEl) {
         wrongEl.textContent = rs.wrong_cards || 0;
         // 有错题时点击可跳错题重练
@@ -218,6 +219,40 @@ async function loadStats() {
 }
 
 /* ---------------- 高级字段折叠 ---------------- */
+
+function renderWeakPointPanel(points) {
+  const panel = document.getElementById("weakPanel");
+  const list = document.getElementById("weakPointList");
+  if (!panel || !list) return;
+  if (!points || points.length === 0) {
+    panel.style.display = "none";
+    list.innerHTML = "";
+    return;
+  }
+
+  panel.style.display = "";
+  list.innerHTML = points.map(p => `
+    <button type="button" class="weak-point-item" data-title="${esc(p.title)}">
+      <span class="weak-point-title">${esc(p.title)}</span>
+      <span class="weak-point-meta">
+        <span>${esc(p.tag || "未分类")}</span>
+        <span><b>${p.wrong_count || 0}</b> 次错误</span>
+        <span>${p.active_wrong_cards || 0} 张错题卡</span>
+      </span>
+    </button>
+  `).join("");
+
+  list.querySelectorAll(".weak-point-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("pointSearch");
+      if (!input) return;
+      input.value = btn.dataset.title || "";
+      input.focus();
+      renderPointsList();
+      document.getElementById("pointsList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
 
 function bindAdvancedToggle() {
   document.getElementById("toggleAdvanced").addEventListener("click", () => {
