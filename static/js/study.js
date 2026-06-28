@@ -284,6 +284,12 @@ async function rate(rating) {
   const card = queue[currentIdx];
   try {
     await API.reviewCard(card.id, rating);
+    if (selectedMode === "wrong" && (rating === "again" || rating === "hard")) {
+      queue.push({
+        ...card,
+        wrong_count: (card.wrong_count || 0) + 1,
+      });
+    }
     currentIdx++;
     if (currentIdx >= queue.length) {
       document.getElementById("cardArea").style.display = "none";
