@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识网络 · MedMemo</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- vis-network：本地优先，CDN 回退（保证离线可用） -->
+  <script src="/vendor/vis-network.min.js"></script>
+  <script>
+    // 本地加载失败时，回退到 CDN
+    if (typeof vis === "undefined") {
+      (function loadVis() {
+        var sources = [
+          "https://cdn.jsdelivr.net/npm/vis-network/standalone/umd/vis-network.min.js",
+          "https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"
+        ];
+        var i = 0;
+        function tryNext() {
+          if (i >= sources.length) { return; }
+          var s = document.createElement("script");
+          s.src = sources[i++];
+          s.onload = function () { if (typeof vis === "undefined") tryNext(); };
+          s.onerror = tryNext;
+          document.head.appendChild(s);
+        }
+        tryNext();
+      })();
+    }
+  </script>
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand">🧠 MedMemo <span class="brand-sub">知识网络</span></div>
+    <div class="nav-links">
+      <a href="/">知识点</a>
+      <a href="/import.html">AI 导入</a>
+      <a href="/network.html" class="active">知识网络</a>
+      <a href="/study.html" class="nav-cta">开始复习 →</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="panel">
+      <h2>🕸️ 知识网络图</h2>
+      <p class="hint">每个圆是一个知识点。<strong style="color:var(--primary);">单击展开子节点，长按拖拽移动</strong>。知识不是孤岛，连成网才能持久记忆。滚轮缩放。</p>
+
+      <!-- 控制栏：视图切换 + 学科筛选 + 背景色 -->
+      <div class="net-controls">
+        <div class="net-ctrl-group">
+          <span class="net-ctrl-label">视图：</span>
+          <button class="view-btn active" data-view="main">🕸️ 知识网络</button>
+          <button class="view-btn" data-view="compare">🔀 对比网络</button>
+        </div>
+        <div class="net-ctrl-group">
+          <span class="net-ctrl-label">学科：</span>
+          <div id="netTagButtons" class="net-tag-buttons">
+            <button class="net-tag-btn active" data-tag="">全部</button>
+          </div>
+        </div>
+        <div class="net-ctrl-group">
+          <span class="net-ctrl-label">背景：</span>
+          <input type="color" id="bgColorPicker" value="#fafbfc" title="自定义背景色">
+          <button class="net-preset" data-bg="#fafbfc" style="background:#fafbfc;"></button>
+          <button class="net-preset" data-bg="#1e293b" style="background:#1e293b;"></button>
+          <button class="net-preset" data-bg="#0f172a" style="background:#0f172a;"></button>
+          <button class="net-preset" data-bg="#fef3c7" style="background:#fef3c7;"></button>
+          <button class="net-preset" data-bg="#dbeafe" style="background:#dbeafe;"></button>
+        </div>
+        <div class="net-ctrl-group">
+          <span class="net-ctrl-label">编辑：</span>
+          <button class="view-btn" id="editModeBtn">✏️ 编辑模式</button>
+          <button class="btn-mini" id="addNodeBtn" style="display:none;">＋ 节点</button>
+          <button class="btn-mini" id="connectBtn" style="display:none;">🔗 连线</button>
+          <button class="btn-mini" id="deleteBtn" style="display:none;">🗑 删除</button>
+        </div>
+        <div class="net-ctrl-group">
+          <button class="btn-mini" id="nodeListToggleBtn" title="显示/隐藏左侧知识点列表">📋 知识点列表</button>
+          <button class="btn-mini" id="attachSmallBtn" title="用 AI 把小知识点自动归属到同学科最相关的大知识点，融入大点子树">🔗 关联小知识点</button>
+        </div>
+        <div class="net-ctrl-group" id="netHiddenGroup" style="display:none;">
+          <button class="btn-mini" id="showAllBtn" onclick="showAllPoints()">👁 显示全部知识点</button>
+          <span class="muted" id="hiddenCount"></span>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#2563eb;"></span>药理</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#dc2626;"></span>病理</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#16a34a;"></span>生理</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#d97706;"></span>解剖</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#9333ea;"></span>内科</span>
+        <span class="legend-item muted">…等</span>
+        <span class="legend-item"><span class="legend-diamond">◆</span>🔖 小知识点（菱形·灰色）</span>
+      </div>
+
+      <div id="networkLoading" class="muted" style="padding:40px;text-align:center;">加载知识网络中...</div>
+      <div id="networkError" class="muted" style="display:none;padding:40px;text-align:center;color:var(--danger);">
+        加载失败：连接不到服务器。<br><button class="btn-primary" onclick="location.reload()" style="margin-top:12px;">重试</button>
+      </div>
+      <div id="networkEmpty" class="empty-state" style="display:none;">
+        <div class="empty-icon">🕸️</div>
+        <h2>还没有知识点</h2>
+        <p>先去添加知识点，或通过 AI 导入。</p>
+        <a href="/" class="btn-primary">去管理知识点</a>
+      </div>
+      <div id="networkBox" style="display:none;position:relative;">
+        <div id="networkContainer" class="net-canvas"></div>
+        <aside id="nodeListPanel" class="node-list-panel" aria-hidden="true"></aside>
+        <aside id="nodeDetail" class="node-detail" aria-hidden="true"></aside>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/network.js"></script>
+</body>
+</html>

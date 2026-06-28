@@ -1,0 +1,9 @@
+{
+  "deepseek_api_key": "",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "deepseek_model": "deepseek-chat",
+  "deepseek_max_tokens": 8192,
+  "host": "localhost",
+  "port": 8000,
+  "new_cards_per_day": 0
+}

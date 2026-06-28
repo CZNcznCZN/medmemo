@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MedMemo · 医学知识理解性记忆</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand">🧠 MedMemo <span class="brand-sub">医学知识 · 理解性记忆</span></div>
+    <div class="nav-links">
+      <a href="/" class="active">知识点</a>
+      <a href="/import.html">AI 导入</a>
+      <a href="/network.html">知识网络</a>
+      <a href="/study.html" class="nav-cta">开始复习 →</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <!-- 统计条 -->
+    <section class="stats-bar" id="statsBar">
+      <div class="stat"><div class="stat-num" id="statDue">-</div><div class="stat-label">今日待复习</div></div>
+      <div class="stat"><div class="stat-num" id="statCards">-</div><div class="stat-label">总卡片</div></div>
+      <div class="stat"><div class="stat-num" id="statPoints">-</div><div class="stat-label">知识点</div></div>
+      <div class="stat"><div class="stat-num" id="statAccuracy">-</div><div class="stat-label">正确率</div></div>
+      <div class="stat"><div class="stat-num" id="statWrong">-</div><div class="stat-label">错题</div></div>
+      <div class="stat stat-cta" id="studyCta">
+        <a href="/study.html">立即复习 →</a>
+      </div>
+      <div class="stat stat-cta">
+        <a href="/api/export">⬇ 导出备份</a>
+      </div>
+    </section>
+
+    <!-- 科目筛选 -->
+    <section class="panel tag-filter-panel">
+      <div class="tag-filter">
+        <span class="tag-filter-label">科目筛选：</span>
+        <div id="tagButtons" class="tag-buttons">
+          <button class="tag-btn active" data-tag="">全部</button>
+          <span class="muted">加载中...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 手动新增知识点 -->
+    <section class="panel">
+      <h2>➕ 新增知识点</h2>
+      <p class="hint">一个知识点 = 一个原子事实。标注科目，配「机制」「记忆画面」帮助理解和持久记忆。<span class="toggle-link" id="toggleAdvanced">▼ 展开高级字段</span></p>
+      <form id="addForm">
+        <div class="form-row">
+          <input type="text" id="fTitle" placeholder="知识点标题（如：地高辛的作用机制）" required>
+          <input type="text" id="fTag" list="tagList" placeholder="科目（可选/可自定义）" value="通用">
+          <datalist id="tagList">
+            <option value="通用">
+            <option value="药理">
+            <option value="病理">
+            <option value="生理">
+            <option value="解剖">
+            <option value="内科">
+            <option value="外科">
+            <option value="微生物">
+            <option value="生化">
+            <option value="免疫">
+          </datalist>
+        </div>
+        <div class="form-grid">
+          <label>机制解释（为什么）<textarea id="fMechanism" placeholder="因果链：因为...所以..." rows="2"></textarea></label>
+          <label>临床联系<textarea id="fClinical" placeholder="用在哪 / 有什么临床意义" rows="2"></textarea></label>
+          <label>记忆画面（一句，辅助成像）<textarea id="fMnemonic" placeholder="一个生动、有动作的画面描述" rows="2"></textarea></label>
+        </div>
+        <!-- 高级可选字段（默认折叠） -->
+        <div id="advancedFields" class="advanced-fields" style="display:none;">
+          <div class="form-grid">
+            <label>诊断要点<textarea id="fDiagnosis" placeholder="核心诊断标准/典型表现" rows="2"></textarea></label>
+            <label>治疗方式<textarea id="fTreatment" placeholder="一线/二线/特殊治疗" rows="2"></textarea></label>
+            <label>鉴别诊断<textarea id="fDifferential" placeholder="主要鉴别的疾病及区分要点" rows="2"></textarea></label>
+            <label>病因<textarea id="fEtiology" placeholder="发病原因/危险因素" rows="2"></textarea></label>
+            <label>预防<textarea id="fPrevention" placeholder="预防措施" rows="2"></textarea></label>
+          </div>
+        </div>
+        <div class="cards-editor">
+          <div class="cards-editor-head">
+            <span>卡片（正反问答）</span>
+            <button type="button" class="btn-mini" id="addCardBtn">+ 加一张卡</button>
+          </div>
+          <div id="cardsList"></div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">保存知识点</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 知识点列表 -->
+    <section class="panel">
+      <h2>📚 我的知识点</h2>
+      <div id="pointsList" class="points-list"><p class="muted">加载中...</p></div>
+    </section>
+  </main>
+
+  <!-- 关联详情弹窗 -->
+  <div id="relationModal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3 id="relModalTitle">知识关联</h3>
+        <button class="modal-close" id="relModalClose">✕</button>
+      </div>
+      <div id="relModalBody"></div>
+      <div class="modal-form">
+        <h4>➕ 手动添加关联</h4>
+        <div class="form-row">
+          <select id="relOtherPoint"><option value="">选择关联知识点...</option></select>
+          <select id="relType">
+            <option value="related">相关</option>
+            <option value="cause">因果（A导致B）</option>
+            <option value="compare">对比（易混）</option>
+            <option value="upstream">上游基础</option>
+            <option value="downstream">下游延伸</option>
+          </select>
+        </div>
+        <input type="text" id="relNote" placeholder="一句话说明关联原因（可选）">
+        <button type="button" class="btn-primary" id="relAddBtn">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/index.js"></script>
+</body>
+</html>

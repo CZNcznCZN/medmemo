@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>复习 · MedMemo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="study-body">
+  <nav class="topbar study-topbar">
+    <div class="brand">🧠 MedMemo <span class="brand-sub">复习中</span></div>
+    <div class="nav-links">
+      <a href="/">知识点</a>
+      <a href="/import.html">AI 导入</a>
+      <a href="/network.html">知识网络</a>
+      <span class="progress-text" id="progressText"></span>
+    </div>
+  </nav>
+
+  <main class="study-main" id="studyMain">
+    <!-- 复习选择（复习前选模式 + 科目/知识点） -->
+    <div id="tagSelector" class="tag-selector">
+      <div class="tag-selector-inner">
+        <!-- 模式切换 -->
+        <div class="mode-switch">
+          <button class="mode-btn active" data-mode="subject">📚 按科目</button>
+          <button class="mode-btn" data-mode="point">🎯 按知识点</button>
+          <button class="mode-btn" data-mode="wrong">❌ 错题重练</button>
+        </div>
+
+        <!-- 按科目模式 -->
+        <div id="subjectPanel">
+          <h2>选择复习科目</h2>
+          <p class="hint">选「全部」会交错出各科目的卡片，制造合意困难，记忆更牢。也可以选单个科目集中练。</p>
+          <div id="studyTagButtons" class="study-tag-buttons">
+            <button class="tag-btn tag-btn-lg active" data-tag="">全部科目</button>
+            <span class="muted">加载中...</span>
+          </div>
+        </div>
+
+        <!-- 按知识点模式 -->
+        <div id="pointPanel" style="display:none;">
+          <h2>选择要复习的知识点</h2>
+          <p class="hint">一个知识点有多种问法（正向/反向/机制/应用），集中复习能从多个角度吃透它。</p>
+          <div class="point-filter-row">
+            <select id="pointSubjectFilter">
+              <option value="">全部科目</option>
+            </select>
+          </div>
+          <div id="pointList" class="point-study-list">
+            <span class="muted">加载中...</span>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="startStudyBtn" style="margin-top:16px;">开始复习</button>
+      </div>
+    </div>
+
+    <!-- 复习区域（选完科目后显示） -->
+    <div id="studyArea" style="display:none;">
+      <!-- 进度条 -->
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+      <!-- 空状态 -->
+      <div id="emptyState" class="empty-state" style="display:none;">
+        <div class="empty-icon">🎉</div>
+        <h2>今天的复习完成啦！</h2>
+        <p>没有到期的卡片了。理解 + 持久，慢慢来才记得牢。</p>
+        <a href="/" class="btn-primary">返回知识点管理</a>
+      </div>
+
+      <!-- 复习卡片 -->
+      <div id="cardArea" class="card-area">
+        <div class="card-meta" id="cardMeta"></div>
+        <div class="flashcard" id="flashcard">
+          <div class="flashcard-inner">
+            <div class="flashcard-face flashcard-front">
+              <div class="card-label">问题</div>
+              <div class="card-question" id="cardQuestion"></div>
+              <div class="flip-hint">点击或按空格显示答案</div>
+            </div>
+            <div class="flashcard-face flashcard-back">
+              <div class="card-label">答案</div>
+              <div class="card-question" id="cardAnswer"></div>
+              <!-- 理解辅助 -->
+              <div class="understand-box" id="understandBox"></div>
+              <!-- 知识关联（串联提示） -->
+              <div class="relation-hint" id="relationHint" style="display:none;">
+                <div class="relation-hint-label">🔗 关联知识点</div>
+                <div id="relationHintList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 评分按钮（翻面后显示） -->
+        <div class="rating-buttons" id="ratingButtons" style="display:none;">
+          <button class="rating-btn rate-again" data-rating="again"><span class="rate-num">1</span><span class="rate-label">重记</span></button>
+          <button class="rating-btn rate-hard" data-rating="hard"><span class="rate-num">2</span><span class="rate-label">困难</span></button>
+          <button class="rating-btn rate-good" data-rating="good"><span class="rate-num">3</span><span class="rate-label">良好</span></button>
+          <button class="rating-btn rate-easy" data-rating="easy"><span class="rate-num">4</span><span class="rate-label">简单</span></button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/study.js"></script>
+</body>
+</html>

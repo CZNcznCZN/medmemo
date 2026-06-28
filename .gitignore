@@ -1,0 +1,29 @@
+# User data and secrets
+config.json
+flashcards.db
+*.db
+*.sqlite
+*.sqlite3
+.seeded
+
+# AI/debug output that may contain private study material
+last-ai-json-*.txt
+*_ai*.log
+*.log
+_devrun.log
+_medmemo_boot.log
+_newrun.log
+_netstat_tmp.txt
+
+# Python/cache/build artifacts
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.spec
+
+# Local Windows/temporary files
+nul
+Thumbs.db
+.DS_Store
+_test_*.bat

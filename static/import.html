@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 导入 · MedMemo</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand">🧠 MedMemo <span class="brand-sub">医学知识 · 理解性记忆</span></div>
+    <div class="nav-links">
+      <a href="/">知识点</a>
+      <a href="/import.html" class="active">AI 导入</a>
+      <a href="/network.html">知识网络</a>
+      <a href="/study.html" class="nav-cta">开始复习 →</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="panel">
+      <h2>🤖 AI 智能拆卡</h2>
+      <p class="hint">粘贴一段医学文本，AI 会自动拆成原子化知识点，并为每个点生成「机制 + 临床 + 记忆画面」和「正/反/机制/应用」四种问法卡，还会找出易混概念生成对照卡。</p>
+      <div id="aiStatus" class="ai-status"></div>
+
+      <div class="form-row">
+        <select id="subject">
+          <option value="药理">药理（机制→作用→用途→不良反应→禁忌）</option>
+          <option value="病理">病理（病因→病变→临床联系）</option>
+          <option value="生理">生理（概念→机制→调节→失衡）</option>
+          <option value="解剖">解剖（位置→结构→毗邻→功能）</option>
+          <option value="内科">内科（表现→诊断→鉴别→治疗）</option>
+          <option value="外科">外科（表现→诊断→手术→并发症）</option>
+          <option value="微生物">微生物（病原→机制→疾病→防治）</option>
+          <option value="生化">生化（反应→酶→调节→意义）</option>
+          <option value="免疫">免疫（机制→介导→病理→临床）</option>
+          <option value="通用">通用</option>
+          <option value="__custom__" id="customOption">✏️ 自定义科目...</option>
+        </select>
+        <input type="text" id="customSubject" placeholder="输入自定义科目名" style="display:none;max-width:200px;">
+      </div>
+      <textarea id="sourceText" placeholder="把医学教材/笔记内容粘贴到这里...（例如：青霉素通过抑制细菌细胞壁中转肽酶，阻止肽聚糖交联，造成细胞壁缺损，细菌在高渗环境下溶解死亡。主要用于革兰阳性菌感染，常见过敏反应，严重者可致过敏性休克。）" rows="8"></textarea>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="generateBtn">✨ 开始拆卡</button>
+        <span id="genProgress" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="resultPanel" style="display:none;">
+      <h2>🔍 拆解结果（请审核）</h2>
+      <p class="hint">检查无误后点底部「全部入库」。也可逐条编辑或删除。</p>
+      <div id="resultList"></div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="importBtn">📥 全部入库</button>
+        <span id="importMsg" class="muted"></span>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/import.js"></script>
+</body>
+</html>
