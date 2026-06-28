@@ -188,7 +188,7 @@ function renderResult(result) {
   // 知识点
   (result.points || []).forEach((p, i) => {
     const cards = (p.cards || []).map(c =>
-      `<div class="ai-card-line"><span class="type-badge type-${c.type}">${esc(TYPE_LABELS[c.type] || c.type)}</span><strong>问：</strong>${esc(c.question)} <strong>答：</strong>${esc(c.answer)}</div>`
+      renderEditableCard(c)
     ).join("");
     // 层级节点树（用于知识网络展开）——小知识点无 nodes
     let nodesHtml = "";
@@ -211,12 +211,33 @@ function renderResult(result) {
       : "";
     const itemClass = `ai-result-item${dup ? " ai-result-dup" : ""}${isSmall ? " ai-result-small" : ""}`;
     parts.push(`
-      <div class="${itemClass}">
-        <h3>📌 ${esc(p.title)} ${sizeBadge}</h3>
+      <div class="${itemClass} ai-result-point" data-index="${i}">
+        <div class="ai-result-head">
+          <h3>📌 ${esc(p.title || "未命名知识点")} ${sizeBadge}</h3>
+          <button type="button" class="btn-mini ai-remove-point">删除</button>
+        </div>
         ${dupHtml}
-        ${p.mechanism ? `<div class="uk-block"><strong>机制：</strong>${esc(p.mechanism)}</div>` : ""}
-        ${p.clinical ? `<div class="uk-block"><strong>临床：</strong>${esc(p.clinical)}</div>` : ""}
-        ${p.mnemonic ? `<div class="uk-block"><strong>记忆画面：</strong>${esc(p.mnemonic)}</div>` : ""}
+        <div class="ai-edit-grid">
+          <label>标题<input type="text" class="ai-edit-title" value="${esc(p.title || "")}"></label>
+          <label>类型
+            <select class="ai-edit-size">
+              <option value="big" ${p.size !== "small" ? "selected" : ""}>大知识点</option>
+              <option value="small" ${p.size === "small" ? "selected" : ""}>小知识点</option>
+            </select>
+          </label>
+          <label>机制<textarea class="ai-edit-mechanism" rows="2">${esc(p.mechanism || "")}</textarea></label>
+          <label>临床<textarea class="ai-edit-clinical" rows="2">${esc(p.clinical || "")}</textarea></label>
+          <label>记忆画面<textarea class="ai-edit-mnemonic" rows="2">${esc(p.mnemonic || "")}</textarea></label>
+          <label>诊断<textarea class="ai-edit-diagnosis" rows="2">${esc(p.diagnosis || "")}</textarea></label>
+          <label>治疗<textarea class="ai-edit-treatment" rows="2">${esc(p.treatment || "")}</textarea></label>
+          <label>鉴别<textarea class="ai-edit-differential" rows="2">${esc(p.differential || "")}</textarea></label>
+          <label>病因<textarea class="ai-edit-etiology" rows="2">${esc(p.etiology || "")}</textarea></label>
+          <label>预防<textarea class="ai-edit-prevention" rows="2">${esc(p.prevention || "")}</textarea></label>
+        </div>
+        <div class="ai-cards-head">
+          <strong>卡片</strong>
+          <button type="button" class="btn-mini ai-add-card">+ 加一张卡</button>
+        </div>
         <div class="ai-cards-mini">${cards}</div>
         ${nodesHtml}
       </div>
@@ -225,14 +246,17 @@ function renderResult(result) {
 
   // 对照卡
   if (result.comparisons && result.comparisons.length) {
-    result.comparisons.forEach(c => {
+    result.comparisons.forEach((c, i) => {
       const dims = (c.dimensions || []).map(d =>
         `<tr><td><strong>${esc(d.dim)}</strong></td><td>${esc(d.value_a)}</td><td>${esc(d.value_b)}</td></tr>`
       ).join("");
       // 把对照卡包装成一个特殊"知识点"
       parts.push(`
-        <div class="ai-result-item">
-          <h3>🔀 对照：${esc(c.a)} vs ${esc(c.b)}</h3>
+        <div class="ai-result-item ai-result-comparison" data-index="${i}">
+          <div class="ai-result-head">
+            <h3>🔀 对照：${esc(c.a)} vs ${esc(c.b)}</h3>
+            <button type="button" class="btn-mini ai-remove-comparison">删除</button>
+          </div>
           <table style="width:100%; font-size:13px; border-collapse:collapse;">
             <thead><tr style="background:#f1f5f9;"><th style="text-align:left;padding:6px;">维度</th><th style="text-align:left;padding:6px;">${esc(c.a)}</th><th style="text-align:left;padding:6px;">${esc(c.b)}</th></tr></thead>
             <tbody style="border-top:1px solid #e2e8f0;">${dims}</tbody>
@@ -246,7 +270,88 @@ function renderResult(result) {
     list.innerHTML = `<div class="muted">AI 未解析出知识点，换个文本试试。</div>`;
   } else {
     list.innerHTML = parts.join("");
+    bindResultEditing();
   }
+}
+
+function renderEditableCard(card = {}) {
+  const type = card.type || "forward";
+  return `
+    <div class="ai-card-line ai-edit-card">
+      <select class="ai-card-type">
+        ${["forward", "reverse", "mechanism", "apply", "compare"].map(t =>
+          `<option value="${t}" ${type === t ? "selected" : ""}>${TYPE_LABELS[t] || t}</option>`
+        ).join("")}
+      </select>
+      <input type="text" class="ai-card-question" placeholder="问题" value="${esc(card.question || "")}">
+      <input type="text" class="ai-card-answer" placeholder="答案" value="${esc(card.answer || "")}">
+      <button type="button" class="del-card ai-remove-card" title="删除">✕</button>
+    </div>
+  `;
+}
+
+function bindResultEditing() {
+  document.querySelectorAll(".ai-remove-point").forEach(btn => {
+    btn.addEventListener("click", () => btn.closest(".ai-result-point").remove());
+  });
+  document.querySelectorAll(".ai-remove-comparison").forEach(btn => {
+    btn.addEventListener("click", () => btn.closest(".ai-result-comparison").remove());
+  });
+  document.querySelectorAll(".ai-remove-card").forEach(btn => {
+    btn.addEventListener("click", () => btn.closest(".ai-edit-card").remove());
+  });
+  document.querySelectorAll(".ai-add-card").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cardsBox = btn.closest(".ai-result-point").querySelector(".ai-cards-mini");
+      cardsBox.insertAdjacentHTML("beforeend", renderEditableCard({ type: "forward" }));
+      cardsBox.lastElementChild.querySelector(".ai-remove-card")
+        .addEventListener("click", (e) => e.target.closest(".ai-edit-card").remove());
+    });
+  });
+}
+
+function collectEditedResult() {
+  if (!aiResult) return null;
+  const points = Array.from(document.querySelectorAll(".ai-result-point")).map(el => {
+    const original = aiResult.points[parseInt(el.dataset.index)] || {};
+    const cards = Array.from(el.querySelectorAll(".ai-edit-card")).map(row => ({
+      type: row.querySelector(".ai-card-type").value,
+      question: row.querySelector(".ai-card-question").value.trim(),
+      answer: row.querySelector(".ai-card-answer").value.trim(),
+    })).filter(card => card.question || card.answer);
+    return {
+      ...original,
+      title: el.querySelector(".ai-edit-title").value.trim(),
+      size: el.querySelector(".ai-edit-size").value,
+      mechanism: el.querySelector(".ai-edit-mechanism").value.trim(),
+      clinical: el.querySelector(".ai-edit-clinical").value.trim(),
+      mnemonic: el.querySelector(".ai-edit-mnemonic").value.trim(),
+      diagnosis: el.querySelector(".ai-edit-diagnosis").value.trim(),
+      treatment: el.querySelector(".ai-edit-treatment").value.trim(),
+      differential: el.querySelector(".ai-edit-differential").value.trim(),
+      etiology: el.querySelector(".ai-edit-etiology").value.trim(),
+      prevention: el.querySelector(".ai-edit-prevention").value.trim(),
+      cards,
+    };
+  });
+  const comparisons = Array.from(document.querySelectorAll(".ai-result-comparison"))
+    .map(el => aiResult.comparisons[parseInt(el.dataset.index)])
+    .filter(Boolean);
+  return { ...aiResult, points, comparisons };
+}
+
+function validateEditedResult(result) {
+  if (!result.points.length && !result.comparisons.length) {
+    return "没有可入库的知识点或对照卡。";
+  }
+  for (const point of result.points) {
+    if (!point.title) return "有知识点缺少标题。";
+    if (!point.cards || !point.cards.length) return `「${point.title}」至少需要一张卡片。`;
+    if (point.cards.some(card => !card.question || !card.answer)) {
+      return `「${point.title}」里有卡片缺少问题或答案。`;
+    }
+  }
+  return "";
 }
 
 function bindImport() {
@@ -264,6 +369,12 @@ async function onImport() {
   msg.textContent = "⏳ 入库中...";
 
   try {
+    aiResult = collectEditedResult();
+    const validationError = validateEditedResult(aiResult);
+    if (validationError) {
+      msg.textContent = validationError;
+      return;
+    }
     const subjectTag = getSubject();
     const result = await API.importBatch(aiResult, subjectTag);
     msg.textContent = `✅ 已入库 ${result.point_count} 个知识点，${result.card_count} 张卡片，${result.relation_count} 条关联`;
