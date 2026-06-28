@@ -47,6 +47,7 @@ const API = {
   deletePoint: (id) => API._req("DELETE", `/api/points/${id}`),
 
   listCards: () => API._req("GET", "/api/cards").then(r => r.cards),
+  createCard: (data) => API._req("POST", "/api/cards", data),
   getDue: (tag, pointIds) => {
     const params = [];
     if (tag) params.push("tag=" + encodeURIComponent(tag));

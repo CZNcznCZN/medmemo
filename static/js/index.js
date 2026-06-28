@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAddForm();
   bindAdvancedToggle();
   bindRelationModal();
+  bindPointEditModal();
   bindBackupImport();
   bindPointSearch();
   addCardRow("forward");
@@ -347,6 +348,9 @@ function bindPointListActions(box) {
   box.querySelectorAll(".rel-point").forEach(btn => {
     btn.addEventListener("click", () => openRelationModal(parseInt(btn.dataset.id), btn.dataset.title));
   });
+  box.querySelectorAll(".edit-point").forEach(btn => {
+    btn.addEventListener("click", () => openPointEditModal(parseInt(btn.dataset.id)));
+  });
 }
 
 function renderPoint(p, cards) {
@@ -375,6 +379,7 @@ function renderPoint(p, cards) {
           ${sizeBadge}
         </div>
         <div class="point-actions">
+          <button class="edit-point" data-id="${p.id}">编辑</button>
           <button class="rel-point" data-id="${p.id}" data-title="${esc(p.title)}">🔗</button>
           <button class="del-point" data-id="${p.id}">删除</button>
         </div>
@@ -383,6 +388,119 @@ function renderPoint(p, cards) {
       ${cardChips ? `<div class="point-cards">${cardChips}</div>` : ""}
     </div>
   `;
+}
+
+/* ---------------- 知识点编辑弹窗 ---------------- */
+
+function bindPointEditModal() {
+  const modal = document.getElementById("pointEditModal");
+  const close = document.getElementById("editModalClose");
+  const addBtn = document.getElementById("editAddCardBtn");
+  const form = document.getElementById("editPointForm");
+  if (!modal || !close || !addBtn || !form) return;
+
+  close.addEventListener("click", closePointEditModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target.id === "pointEditModal") closePointEditModal();
+  });
+  addBtn.addEventListener("click", () => addEditCardRow());
+  form.addEventListener("submit", savePointEdits);
+}
+
+function closePointEditModal() {
+  document.getElementById("pointEditModal").style.display = "none";
+  document.getElementById("editMsg").textContent = "";
+}
+
+function setEditValue(id, value) {
+  document.getElementById(id).value = value || "";
+}
+
+function openPointEditModal(pointId) {
+  const point = currentPointsCache.find(p => p.id === pointId);
+  if (!point) return;
+  document.getElementById("editModalTitle").textContent = `编辑「${point.title}」`;
+  setEditValue("editPointId", point.id);
+  setEditValue("editTitle", point.title);
+  setEditValue("editTag", point.tag);
+  setEditValue("editMechanism", point.mechanism);
+  setEditValue("editClinical", point.clinical);
+  setEditValue("editMnemonic", point.mnemonic);
+  setEditValue("editDiagnosis", point.diagnosis);
+  setEditValue("editTreatment", point.treatment);
+  setEditValue("editDifferential", point.differential);
+  setEditValue("editEtiology", point.etiology);
+  setEditValue("editPrevention", point.prevention);
+  const list = document.getElementById("editCardsList");
+  list.innerHTML = "";
+  (currentCardsByPoint[point.id] || []).forEach(card => addEditCardRow(card));
+  document.getElementById("pointEditModal").style.display = "flex";
+}
+
+function addEditCardRow(card = {}) {
+  const list = document.getElementById("editCardsList");
+  const row = document.createElement("div");
+  row.className = "edit-card-row";
+  row.dataset.id = card.id || "";
+  row.innerHTML = `
+    <select class="edit-card-type">
+      ${CARD_TYPES.concat("compare").map(t => `<option value="${t}" ${card.type === t ? "selected" : ""}>${TYPE_LABELS[t] || t}</option>`).join("")}
+    </select>
+    <input type="text" class="edit-card-q" placeholder="问题" value="${esc(card.question || "")}">
+    <input type="text" class="edit-card-a" placeholder="答案" value="${esc(card.answer || "")}">
+    <button type="button" class="del-card" title="删除">✕</button>
+  `;
+  row.querySelector(".del-card").addEventListener("click", () => row.remove());
+  list.appendChild(row);
+}
+
+function collectEditCards() {
+  return Array.from(document.querySelectorAll("#editCardsList .edit-card-row"))
+    .map(row => ({
+      id: row.dataset.id ? parseInt(row.dataset.id) : null,
+      type: row.querySelector(".edit-card-type").value,
+      question: row.querySelector(".edit-card-q").value.trim(),
+      answer: row.querySelector(".edit-card-a").value.trim(),
+    }))
+    .filter(card => card.question || card.answer);
+}
+
+async function savePointEdits(e) {
+  e.preventDefault();
+  const pointId = parseInt(document.getElementById("editPointId").value);
+  const cards = collectEditCards();
+  if (!cards.length || cards.some(card => !card.question || !card.answer)) {
+    alert("至少保留一张完整卡片（问题 + 答案）。");
+    return;
+  }
+
+  const saveBtn = document.getElementById("editSaveBtn");
+  const msg = document.getElementById("editMsg");
+  saveBtn.disabled = true;
+  msg.textContent = "保存中...";
+  try {
+    await API.updatePoint(pointId, {
+      title: document.getElementById("editTitle").value.trim(),
+      tag: document.getElementById("editTag").value.trim(),
+      mechanism: document.getElementById("editMechanism").value.trim(),
+      clinical: document.getElementById("editClinical").value.trim(),
+      mnemonic: document.getElementById("editMnemonic").value.trim(),
+      diagnosis: document.getElementById("editDiagnosis").value.trim(),
+      treatment: document.getElementById("editTreatment").value.trim(),
+      differential: document.getElementById("editDifferential").value.trim(),
+      etiology: document.getElementById("editEtiology").value.trim(),
+      prevention: document.getElementById("editPrevention").value.trim(),
+      cards,
+    });
+    closePointEditModal();
+    await loadStats();
+    await loadTags();
+    await loadPoints();
+  } catch (err) {
+    msg.textContent = "保存失败：" + err.message;
+  } finally {
+    saveBtn.disabled = false;
+  }
 }
 
 /* ---------------- 关联弹窗 ---------------- */

@@ -32,7 +32,7 @@ from urllib.parse import urlparse, parse_qs
 
 import db
 from db import (
-    init_db, stats, list_points, get_point, create_point, update_point,
+    init_db, stats, list_points, get_point, create_point, update_point, update_point_with_cards,
     delete_point, list_cards, get_due_cards, review_card, create_card,
     delete_card, update_card, seed_if_empty, export_all, import_backup, list_point_titles,
     get_tags, get_relations, create_relation, delete_relation,
@@ -250,6 +250,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_body()
             if path == "/api/points":
                 return self._handle_create_point(body)
+            if path == "/api/cards":
+                return self._handle_create_card(body)
             if path == "/api/ai/generate":
                 return self._handle_ai_generate(body)
             if path == "/api/ai/attach-small":
@@ -320,6 +322,21 @@ class Handler(BaseHTTPRequestHandler):
                 comparison.get("dimensions", []),
             )
         self._send_json({"id": pid, "card_ids": card_ids, "node_count": node_count}, 201)
+
+    def _handle_create_card(self, body):
+        """给已有知识点新增一张卡片。"""
+        point_id = body.get("point_id")
+        question = (body.get("question") or "").strip()
+        answer = (body.get("answer") or "").strip()
+        if not point_id or not question or not answer:
+            return self._send_error("需要 point_id、question 和 answer")
+        cid = create_card(
+            point_id=int(point_id),
+            card_type=body.get("type", "forward"),
+            question=question,
+            answer=answer,
+        )
+        self._send_json({"id": cid}, 201)
 
     def _handle_create_node(self, body):
         """新增节点（编辑模式）。需要 point_id + label，可选 detail/parent_id。"""
@@ -405,12 +422,17 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_body()
             m = re.match(r"^/api/points/(\d+)$", path)
             if m:
-                update_point(int(m.group(1)), **body)
+                point_id = int(m.group(1))
+                if "cards" in body:
+                    cards = body.pop("cards", [])
+                    stats = update_point_with_cards(point_id, body, cards)
+                    return self._send_json({"ok": True, "cards": stats})
+                update_point(point_id, **body)
                 return self._send_json({"ok": True})
             m = re.match(r"^/api/cards/(\d+)$", path)
             if m:
                 update_card(int(m.group(1)), question=body.get("question"),
-                            answer=body.get("answer"))
+                            answer=body.get("answer"), card_type=body.get("type"))
                 return self._send_json({"ok": True})
             m = re.match(r"^/api/nodes/(\d+)$", path)
             if m:

@@ -137,6 +137,44 @@
     </div>
   </div>
 
+  <!-- 知识点编辑弹窗 -->
+  <div id="pointEditModal" class="modal" style="display:none;">
+    <div class="modal-content modal-content-wide">
+      <div class="modal-head">
+        <h3 id="editModalTitle">编辑知识点</h3>
+        <button class="modal-close" id="editModalClose">✕</button>
+      </div>
+      <form id="editPointForm">
+        <input type="hidden" id="editPointId">
+        <div class="form-row">
+          <input type="text" id="editTitle" placeholder="知识点标题" required>
+          <input type="text" id="editTag" list="tagList" placeholder="科目">
+        </div>
+        <div class="form-grid">
+          <label>机制解释<textarea id="editMechanism" rows="2"></textarea></label>
+          <label>临床联系<textarea id="editClinical" rows="2"></textarea></label>
+          <label>记忆画面<textarea id="editMnemonic" rows="2"></textarea></label>
+          <label>诊断要点<textarea id="editDiagnosis" rows="2"></textarea></label>
+          <label>治疗方式<textarea id="editTreatment" rows="2"></textarea></label>
+          <label>鉴别诊断<textarea id="editDifferential" rows="2"></textarea></label>
+          <label>病因<textarea id="editEtiology" rows="2"></textarea></label>
+          <label>预防<textarea id="editPrevention" rows="2"></textarea></label>
+        </div>
+        <div class="cards-editor">
+          <div class="cards-editor-head">
+            <span>卡片</span>
+            <button type="button" class="btn-mini" id="editAddCardBtn">+ 加一张卡</button>
+          </div>
+          <div id="editCardsList"></div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" id="editSaveBtn">保存修改</button>
+          <span id="editMsg" class="muted"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/api.js"></script>
   <script src="/js/index.js"></script>
 </body>

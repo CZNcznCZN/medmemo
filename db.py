@@ -477,6 +477,73 @@ def update_point(point_id, **fields):
     return True
 
 
+def update_point_with_cards(point_id, fields, cards):
+    """原子更新知识点和它的卡片列表。"""
+    title = (fields.get("title") or "").strip()
+    if not title:
+        raise ValueError("title 不能为空")
+    valid_cards = []
+    for card in cards or []:
+        question = (card.get("question") or "").strip()
+        answer = (card.get("answer") or "").strip()
+        if not question or not answer:
+            raise ValueError("卡片问题和答案不能为空")
+        valid_cards.append({
+            "id": card.get("id"),
+            "type": card.get("type", "forward"),
+            "question": question,
+            "answer": answer,
+        })
+    if not valid_cards:
+        raise ValueError("至少需要一张卡片")
+
+    sets, vals = [], []
+    for k in fields:
+        if k in _POINT_COLUMNS:
+            sets.append(f"{k} = ?")
+            vals.append(fields[k])
+    if not sets:
+        raise ValueError("没有可更新的知识点字段")
+
+    with _conn() as c:
+        exists = c.execute("SELECT id FROM knowledge_points WHERE id = ?", (point_id,)).fetchone()
+        if not exists:
+            raise KeyError(f"知识点不存在: {point_id}")
+
+        vals.append(point_id)
+        c.execute(f"UPDATE knowledge_points SET {', '.join(sets)} WHERE id = ?", vals)
+
+        existing_ids = {
+            row["id"] for row in c.execute("SELECT id FROM cards WHERE point_id = ?", (point_id,)).fetchall()
+        }
+        incoming_existing_ids = {
+            int(card["id"]) for card in valid_cards if card.get("id") and int(card["id"]) in existing_ids
+        }
+        for card_id in existing_ids - incoming_existing_ids:
+            c.execute("DELETE FROM cards WHERE id = ? AND point_id = ?", (card_id, point_id))
+
+        created = 0
+        updated = 0
+        for card in valid_cards:
+            card_id = card.get("id")
+            if card_id and int(card_id) in existing_ids:
+                c.execute(
+                    "UPDATE cards SET type = ?, question = ?, answer = ? WHERE id = ? AND point_id = ?",
+                    (card["type"], card["question"], card["answer"], int(card_id), point_id),
+                )
+                updated += 1
+            else:
+                c.execute(
+                    """INSERT INTO cards
+                       (point_id, type, question, answer, compare_with,
+                        easiness, interval, repetition, due_date, created_at)
+                       VALUES (?, ?, ?, ?, NULL, 2.5, 0, 0, ?, ?)""",
+                    (point_id, card["type"], card["question"], card["answer"], _today(), _now()),
+                )
+                created += 1
+    return {"updated": updated, "created": created, "deleted": len(existing_ids - incoming_existing_ids)}
+
+
 def list_point_titles():
     """返回现有所有知识点 [{id, title, tag, size}]，供 AI 拆卡时去重参考。
 
@@ -826,9 +893,12 @@ def delete_card(card_id):
         c.execute("DELETE FROM cards WHERE id = ?", (card_id,))
 
 
-def update_card(card_id, question=None, answer=None):
-    """编辑卡片的问题/答案。"""
+def update_card(card_id, question=None, answer=None, card_type=None):
+    """编辑卡片的问题/答案/类型。"""
     sets, vals = [], []
+    if card_type is not None:
+        sets.append("type = ?")
+        vals.append(card_type)
     if question is not None:
         sets.append("question = ?")
         vals.append(question)
