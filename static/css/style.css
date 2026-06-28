@@ -567,6 +567,67 @@ textarea { resize: vertical; }
 .empty-icon { font-size: 56px; margin-bottom: 12px; }
 .empty-state h2 { margin-bottom: 8px; }
 .empty-state p { color: var(--text-muted); margin-bottom: 20px; }
+.completion-summary {
+  margin: 22px auto 24px;
+  text-align: left;
+  color: var(--text);
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.summary-stat {
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+.summary-stat strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.25;
+  color: var(--primary);
+}
+.summary-stat span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.summary-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+.summary-section h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.summary-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.summary-list li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.summary-list b {
+  color: var(--text);
+  font-weight: 600;
+}
+.summary-empty {
+  color: var(--success);
+  font-size: 13px;
+}
 
 /* AI 导入相关 */
 .ai-status {
@@ -1308,6 +1369,7 @@ textarea { resize: vertical; }
   .form-grid, .card-edit-row { grid-template-columns: 1fr; }
   .ai-edit-grid, .ai-edit-card { grid-template-columns: 1fr; }
   .study-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-grid { grid-template-columns: 1fr; }
   .rating-buttons { grid-template-columns: repeat(2, 1fr); }
   .flashcard { height: 280px; }
   .card-question { font-size: 18px; }

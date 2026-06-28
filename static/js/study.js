@@ -10,6 +10,7 @@ let lastReviewUndo = null;
 let sessionStartedAt = null;
 let sessionRated = 0;
 let sessionCorrect = 0;
+let sessionReviews = [];
 
 const REL_TYPE_LABELS = {
   cause: "因果", compare: "对比", upstream: "上游", downstream: "下游", related: "相关"
@@ -187,6 +188,8 @@ async function loadQueue() {
     sessionStartedAt = Date.now();
     sessionRated = 0;
     sessionCorrect = 0;
+    sessionReviews = [];
+    hideCompletionSummary();
     if (queue.length === 0) {
       document.getElementById("cardArea").style.display = "none";
       document.getElementById("emptyState").style.display = "";
@@ -336,6 +339,94 @@ function updateSessionMetrics() {
   metrics.style.display = total > 0 ? "grid" : "none";
 }
 
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "1 分钟内";
+  const minutes = Math.ceil(ms / 60000);
+  if (minutes <= 1) return "1 分钟内";
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}小时${rest}分` : `${hours}小时`;
+}
+
+function isCorrectRating(rating) {
+  return rating === "good" || rating === "easy";
+}
+
+function hideCompletionSummary() {
+  const box = document.getElementById("completionSummary");
+  if (!box) return;
+  box.style.display = "none";
+  box.innerHTML = "";
+}
+
+function buildWeakPointList() {
+  const grouped = new Map();
+  sessionReviews.forEach(item => {
+    const key = item.point_id || item.point_title;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        title: item.point_title,
+        tag: item.point_tag,
+        total: 0,
+        weak: 0,
+      });
+    }
+    const row = grouped.get(key);
+    row.total++;
+    if (!isCorrectRating(item.rating)) row.weak++;
+  });
+  return Array.from(grouped.values())
+    .filter(row => row.weak > 0)
+    .sort((a, b) => b.weak - a.weak || b.total - a.total)
+    .slice(0, 4);
+}
+
+function showCompletionSummary() {
+  const box = document.getElementById("completionSummary");
+  if (!box || sessionRated === 0) {
+    hideCompletionSummary();
+    return;
+  }
+
+  const accuracy = Math.round((sessionCorrect / sessionRated) * 100);
+  const duration = formatDuration(Date.now() - sessionStartedAt);
+  const weakPoints = buildWeakPointList();
+  const missed = sessionReviews
+    .filter(item => !isCorrectRating(item.rating))
+    .slice(-5)
+    .reverse();
+
+  const weakHtml = weakPoints.length
+    ? `<ul class="summary-list">${weakPoints.map(item => `
+        <li><b>${esc(item.title)}</b>${item.tag ? ` · ${esc(item.tag)}` : ""}：${item.weak}/${item.total} 题需要回看</li>
+      `).join("")}</ul>`
+    : `<div class="summary-empty">这轮没有明显薄弱知识点，保持节奏。</div>`;
+
+  const missedHtml = missed.length
+    ? `<ul class="summary-list">${missed.map(item => `
+        <li><b>${ratingLabel(item.rating)}</b> · ${esc(item.point_title)}：${esc(item.question)}</li>
+      `).join("")}</ul>`
+    : `<div class="summary-empty">本轮没有错题，可以直接收工。</div>`;
+
+  box.innerHTML = `
+    <div class="summary-grid">
+      <div class="summary-stat"><strong>${sessionRated}</strong><span>本轮题数</span></div>
+      <div class="summary-stat"><strong>${accuracy}%</strong><span>正确率</span></div>
+      <div class="summary-stat"><strong>${duration}</strong><span>用时</span></div>
+    </div>
+    <div class="summary-section">
+      <h3>优先回看</h3>
+      ${weakHtml}
+    </div>
+    <div class="summary-section">
+      <h3>本轮错题</h3>
+      ${missedHtml}
+    </div>
+  `;
+  box.style.display = "";
+}
+
 /* ---------------- 键盘快捷键 ---------------- */
 
 document.addEventListener("keydown", (e) => {
@@ -361,11 +452,20 @@ async function rate(rating) {
     sessionStartedAt,
     sessionRated,
     sessionCorrect,
+    sessionReviews: sessionReviews.map(item => ({ ...item })),
   };
   try {
     const review = await API.reviewCard(card.id, rating);
     sessionRated++;
     if (rating === "good" || rating === "easy") sessionCorrect++;
+    sessionReviews.push({
+      card_id: card.id,
+      point_id: card.point_id,
+      point_title: card.point_title || "未命名知识点",
+      point_tag: card.point_tag || "",
+      question: card.question || "",
+      rating,
+    });
     if (selectedMode === "wrong" && (rating === "again" || rating === "hard")) {
       queue.push({
         ...card,
@@ -390,6 +490,7 @@ async function rate(rating) {
       document.getElementById("progressText").textContent = `${queue.length} / ${queue.length}`;
       document.getElementById("progressFill").style.width = "100%";
       updateSessionMetrics();
+      showCompletionSummary();
     } else {
       showCard();
     }
@@ -412,8 +513,10 @@ async function undoLastReview() {
     sessionStartedAt = undo.sessionStartedAt;
     sessionRated = undo.sessionRated;
     sessionCorrect = undo.sessionCorrect;
+    sessionReviews = undo.sessionReviews || [];
     document.getElementById("emptyState").style.display = "none";
     document.getElementById("cardArea").style.display = "";
+    hideCompletionSummary();
     showCard();
     showReviewFeedback("已撤销上次评分", null);
   } catch (e) {
