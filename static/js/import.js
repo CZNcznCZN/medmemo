@@ -33,10 +33,22 @@ async function loadSubjectOptions() {
   } catch (e) { /* 拉取失败不影响手动输入 */ }
 }
 
+async function loadExistingPointTitles() {
+  try {
+    const points = await API.listPoints();
+    existingPointTitles = new Set(
+      (points || []).map(p => (p.title || "").trim().toLowerCase()).filter(Boolean)
+    );
+  } catch {
+    existingPointTitles = new Set();
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   bindGenerate();
   bindImport();
   loadSubjectOptions();
+  loadExistingPointTitles();
   // 自定义科目输入框的显示/隐藏
   document.getElementById("subject").addEventListener("change", (e) => {
     const custom = document.getElementById("customSubject");
@@ -58,8 +70,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 let aiResult = null;  // 缓存 AI 返回结果，供入库用
+let existingPointTitles = new Set();
 
 const AI_CHUNK_LIMIT = 2400;
+const AI_LONG_ANSWER_LIMIT = 220;
 
 function bindGenerate() {
   document.getElementById("generateBtn").addEventListener("click", onGenerate);
@@ -165,6 +179,7 @@ async function onGenerate() {
     }
     const result = mergeAiResults(results);
     aiResult = result;
+    await loadExistingPointTitles();
     renderResult(result);
     document.getElementById("resultPanel").style.display = "";
     progress.textContent = chunks.length === 1
@@ -268,9 +283,15 @@ function renderResult(result) {
 
   if (parts.length === 0) {
     list.innerHTML = `<div class="muted">AI 未解析出知识点，换个文本试试。</div>`;
+    const panel = document.getElementById("qualityPanel");
+    if (panel) {
+      panel.className = "ai-quality-panel warn";
+      panel.textContent = "未解析出可入库内容。";
+    }
   } else {
     list.innerHTML = parts.join("");
     bindResultEditing();
+    updateQualityPanel();
   }
 }
 
@@ -292,21 +313,43 @@ function renderEditableCard(card = {}) {
 
 function bindResultEditing() {
   document.querySelectorAll(".ai-remove-point").forEach(btn => {
-    btn.addEventListener("click", () => btn.closest(".ai-result-point").remove());
+    btn.addEventListener("click", () => {
+      btn.closest(".ai-result-point").remove();
+      updateQualityPanel();
+    });
   });
   document.querySelectorAll(".ai-remove-comparison").forEach(btn => {
-    btn.addEventListener("click", () => btn.closest(".ai-result-comparison").remove());
+    btn.addEventListener("click", () => {
+      btn.closest(".ai-result-comparison").remove();
+      updateQualityPanel();
+    });
   });
   document.querySelectorAll(".ai-remove-card").forEach(btn => {
-    btn.addEventListener("click", () => btn.closest(".ai-edit-card").remove());
+    btn.addEventListener("click", () => {
+      btn.closest(".ai-edit-card").remove();
+      updateQualityPanel();
+    });
   });
   document.querySelectorAll(".ai-add-card").forEach(btn => {
     btn.addEventListener("click", () => {
       const cardsBox = btn.closest(".ai-result-point").querySelector(".ai-cards-mini");
       cardsBox.insertAdjacentHTML("beforeend", renderEditableCard({ type: "forward" }));
       cardsBox.lastElementChild.querySelector(".ai-remove-card")
-        .addEventListener("click", (e) => e.target.closest(".ai-edit-card").remove());
+        .addEventListener("click", (e) => {
+          e.target.closest(".ai-edit-card").remove();
+          updateQualityPanel();
+        });
+      bindQualityInputs(cardsBox.lastElementChild);
+      updateQualityPanel();
     });
+  });
+  bindQualityInputs(document.getElementById("resultList"));
+}
+
+function bindQualityInputs(root) {
+  root.querySelectorAll("input, textarea, select").forEach(el => {
+    el.addEventListener("input", updateQualityPanel);
+    el.addEventListener("change", updateQualityPanel);
   });
 }
 
@@ -354,6 +397,79 @@ function validateEditedResult(result) {
   return "";
 }
 
+function analyzeEditedResult(result) {
+  const issues = [];
+  const titleMap = new Map();
+  result.points.forEach((point, index) => {
+    const name = point.title || `第 ${index + 1} 个知识点`;
+    if (!point.title) {
+      issues.push({ level: "error", text: `第 ${index + 1} 个知识点缺少标题。` });
+    } else {
+      const normalized = point.title.toLowerCase();
+      const current = titleMap.get(normalized) || { title: point.title, count: 0 };
+      current.count += 1;
+      titleMap.set(normalized, current);
+      if (existingPointTitles.has(normalized)) {
+        issues.push({ level: "warn", text: `「${point.title}」与已有知识点同名，请确认是否重复。` });
+      }
+    }
+    if (!point.cards || !point.cards.length) {
+      issues.push({ level: "error", text: `「${name}」没有卡片。` });
+    }
+    if (!point.mechanism && point.size !== "small") {
+      issues.push({ level: "warn", text: `「${name}」缺少机制解释。` });
+    }
+    if (!point.clinical && point.size !== "small") {
+      issues.push({ level: "warn", text: `「${name}」缺少临床联系。` });
+    }
+    if (!point.mnemonic && point.size !== "small") {
+      issues.push({ level: "warn", text: `「${name}」缺少记忆画面。` });
+    }
+
+    const seenCards = new Set();
+    (point.cards || []).forEach((card, cardIndex) => {
+      if (!card.question || !card.answer) {
+        issues.push({ level: "error", text: `「${name}」第 ${cardIndex + 1} 张卡片缺少问题或答案。` });
+      }
+      if (card.answer && card.answer.length > AI_LONG_ANSWER_LIMIT) {
+        issues.push({ level: "warn", text: `「${name}」第 ${cardIndex + 1} 张卡片答案较长，可能不利于回忆。` });
+      }
+      const key = `${card.type || ""}::${card.question || ""}::${card.answer || ""}`.toLowerCase();
+      if (seenCards.has(key)) {
+        issues.push({ level: "warn", text: `「${name}」有重复卡片。` });
+      }
+      seenCards.add(key);
+    });
+  });
+  titleMap.forEach(item => {
+    if (item.count > 1) issues.push({ level: "error", text: `标题「${item.title}」重复。` });
+  });
+  return issues;
+}
+
+function updateQualityPanel() {
+  const panel = document.getElementById("qualityPanel");
+  if (!panel || !aiResult) return;
+  const result = collectEditedResult();
+  const issues = analyzeEditedResult(result);
+  const errors = issues.filter(i => i.level === "error");
+  const warnings = issues.filter(i => i.level === "warn");
+  if (!issues.length) {
+    panel.className = "ai-quality-panel ok";
+    panel.innerHTML = "✅ 质量检查通过，可以入库。";
+    return;
+  }
+  panel.className = `ai-quality-panel ${errors.length ? "bad" : "warn"}`;
+  const shown = issues.slice(0, 8).map(i =>
+    `<li class="${i.level}">${i.level === "error" ? "必须修复" : "建议检查"}：${esc(i.text)}</li>`
+  ).join("");
+  const more = issues.length > 8 ? `<li class="muted">还有 ${issues.length - 8} 条提示未显示。</li>` : "";
+  panel.innerHTML = `
+    <div><strong>${errors.length ? "发现必须修复的问题" : "发现建议检查的问题"}</strong>：${errors.length} 个错误，${warnings.length} 个提醒。</div>
+    <ul>${shown}${more}</ul>
+  `;
+}
+
 function bindImport() {
   document.getElementById("importBtn").addEventListener("click", onImport);
 }
@@ -373,6 +489,12 @@ async function onImport() {
     const validationError = validateEditedResult(aiResult);
     if (validationError) {
       msg.textContent = validationError;
+      return;
+    }
+    const qualityErrors = analyzeEditedResult(aiResult).filter(i => i.level === "error");
+    if (qualityErrors.length) {
+      msg.textContent = `还有 ${qualityErrors.length} 个必须修复的问题，请先处理质量检查提示。`;
+      updateQualityPanel();
       return;
     }
     const subjectTag = getSubject();
