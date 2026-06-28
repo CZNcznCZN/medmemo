@@ -45,6 +45,7 @@ from db import (
     delete_points_by_tag, retag_points,
     backfill_comparisons,
     get_wrong_cards, get_review_stats,
+    import_ai_result,
 )
 from ai import generate_cards, attach_small_points
 from config import load_config, has_api_key
@@ -253,6 +254,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_ai_generate(body)
             if path == "/api/ai/attach-small":
                 return self._handle_attach_small(body)
+            if path == "/api/import/batch":
+                return self._handle_import_batch(body)
             if path == "/api/relations":
                 return self._handle_batch_relations(body)
             if path == "/api/nodes":
@@ -364,6 +367,18 @@ class Handler(BaseHTTPRequestHandler):
         if relations:
             batch_create_relations(relations)
         self._send_json({"ok": True, "attached": len(mappings), "unmatched": len(small_points) - len(mappings)})
+
+    def _handle_import_batch(self, body):
+        """批量入库 AI 拆卡结果。使用单个 SQLite transaction，失败则整体回滚。"""
+        tag = body.get("tag", "")
+        result = body.get("result") or {}
+        stats = import_ai_result(
+            result.get("points", []),
+            result.get("comparisons", []),
+            result.get("relations", []),
+            tag=tag,
+        )
+        self._send_json({"ok": True, **stats}, 201)
 
     def _handle_batch_relations(self, body):
         """批量创建知识点关联。"""

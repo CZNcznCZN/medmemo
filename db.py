@@ -257,6 +257,186 @@ def create_point(**fields):
         return pid
 
 
+def import_ai_result(points_data, comparisons_data=None, relations_data=None, tag=""):
+    """Atomically import an AI result.
+
+    Returns {"point_count", "card_count", "node_count", "relation_count"}.
+    Any exception rolls the whole import back through the surrounding _conn().
+    """
+    comparisons_data = comparisons_data or []
+    relations_data = relations_data or []
+    title_to_pid = {}
+    stats = {"point_count": 0, "card_count": 0, "node_count": 0, "relation_count": 0}
+
+    def _insert_point(c, fields):
+        cols = []
+        vals = []
+        for k in _POINT_COLUMNS:
+            if k in fields:
+                cols.append(k)
+                vals.append(fields[k])
+        if "title" not in cols or not str(fields.get("title", "")).strip():
+            raise ValueError("title 不能为空")
+        if "created_at" not in cols:
+            cols.append("created_at")
+            vals.append(_now())
+        placeholders = ", ".join(["?"] * len(cols))
+        col_names = ", ".join(cols)
+        cur = c.execute(
+            f"INSERT INTO knowledge_points ({col_names}) VALUES ({placeholders})",
+            vals,
+        )
+        pid = cur.lastrowid
+        c.execute(
+            """INSERT INTO knowledge_nodes (point_id, parent_id, level, label, detail)
+               VALUES (?, NULL, 0, ?, '')""",
+            (pid, fields["title"]),
+        )
+        return pid
+
+    def _insert_card(c, point_id, card):
+        question = (card.get("question") or "").strip()
+        answer = (card.get("answer") or "").strip()
+        if not question or not answer:
+            return None
+        cur = c.execute(
+            """INSERT INTO cards
+               (point_id, type, question, answer, compare_with,
+                easiness, interval, repetition, due_date, created_at)
+               VALUES (?, ?, ?, ?, NULL, 2.5, 0, 0, ?, ?)""",
+            (point_id, card.get("type", "forward"), question, answer, _today(), _now()),
+        )
+        stats["card_count"] += 1
+        return cur.lastrowid
+
+    def _resolve_link_to(link_to, current_pid):
+        if not link_to:
+            return None
+        if link_to in title_to_pid and title_to_pid[link_to] != current_pid:
+            return title_to_pid[link_to]
+        for title, pid in title_to_pid.items():
+            if pid == current_pid:
+                continue
+            if link_to in title or title in link_to:
+                return pid
+        return None
+
+    def _insert_node_tree(c, point_id, parent_id, level, item):
+        label = (item.get("label") or "").strip()
+        if not label:
+            return
+        link_pid = _resolve_link_to(item.get("link_to"), point_id)
+        cur = c.execute(
+            """INSERT INTO knowledge_nodes (point_id, parent_id, level, label, detail, link_to_point)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (point_id, parent_id, level, label, item.get("detail", ""), link_pid),
+        )
+        stats["node_count"] += 1
+        nid = cur.lastrowid
+        for child in item.get("children", []) or []:
+            _insert_node_tree(c, point_id, nid, level + 1, child)
+
+    def _insert_nodes(c, point_id, title, nodes):
+        if not nodes:
+            return
+        root = c.execute(
+            "SELECT id FROM knowledge_nodes WHERE point_id=? AND parent_id IS NULL ORDER BY id LIMIT 1",
+            (point_id,),
+        ).fetchone()
+        parent_id = root["id"] if root else None
+        for item in nodes:
+            _insert_node_tree(c, point_id, parent_id, 1, item)
+
+    def _insert_comparison(c, point_id, comparison):
+        if not comparison:
+            return
+        c.execute("DELETE FROM comparison_dims WHERE point_id = ?", (point_id,))
+        for d in comparison.get("dimensions", []) or []:
+            dim = (d.get("dim") or "").strip()
+            if not dim:
+                continue
+            c.execute(
+                """INSERT INTO comparison_dims
+                   (point_id, concept_a, concept_b, dim, value_a, value_b)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    point_id,
+                    comparison.get("a", ""),
+                    comparison.get("b", ""),
+                    dim,
+                    d.get("value_a", ""),
+                    d.get("value_b", ""),
+                ),
+            )
+
+    with _conn() as c:
+        pending_nodes = []
+        for row in c.execute("SELECT id, title FROM knowledge_points").fetchall():
+            title_to_pid[row["title"]] = row["id"]
+
+        for p in points_data or []:
+            fields = {
+                "title": (p.get("title") or "").strip(),
+                "tag": tag,
+                "size": p.get("size") or "big",
+                "mechanism": p.get("mechanism", ""),
+                "clinical": p.get("clinical", ""),
+                "mnemonic": p.get("mnemonic", ""),
+                "diagnosis": p.get("diagnosis", ""),
+                "treatment": p.get("treatment", ""),
+                "differential": p.get("differential", ""),
+                "etiology": p.get("etiology", ""),
+                "prevention": p.get("prevention", ""),
+            }
+            pid = _insert_point(c, fields)
+            title_to_pid[fields["title"]] = pid
+            stats["point_count"] += 1
+            for card in p.get("cards", []) or []:
+                _insert_card(c, pid, card)
+            pending_nodes.append((pid, fields["title"], p.get("nodes") or []))
+
+        for cmp in comparisons_data:
+            dims = [d for d in (cmp.get("dimensions") or []) if d and d.get("dim")]
+            a = cmp.get("a", "")
+            b = cmp.get("b", "")
+            cards = [{
+                "type": "compare",
+                "question": f"{a} 与 {b} 的主要区别？",
+                "answer": "；".join([f"【{d.get('dim', '')}】{d.get('value_a', '')} vs {d.get('value_b', '')}" for d in dims]),
+            }]
+            fields = {
+                "title": f"{a} vs {b} 对比",
+                "tag": tag,
+                "size": "big",
+                "mechanism": "",
+                "clinical": "易混概念对照，重点辨析",
+                "mnemonic": "",
+                "differential": "；".join([f"{d.get('dim', '')}：{d.get('value_a', '')} vs {d.get('value_b', '')}" for d in dims]),
+            }
+            pid = _insert_point(c, fields)
+            title_to_pid[fields["title"]] = pid
+            stats["point_count"] += 1
+            for card in cards:
+                _insert_card(c, pid, card)
+            _insert_comparison(c, pid, {"a": a, "b": b, "dimensions": dims})
+
+        for pid, title, nodes in pending_nodes:
+            _insert_nodes(c, pid, title, nodes)
+
+        for r in relations_data:
+            from_id = title_to_pid.get(r.get("from")) or title_to_pid.get(r.get("from_title"))
+            to_id = title_to_pid.get(r.get("to")) or title_to_pid.get(r.get("to_title"))
+            if not from_id or not to_id or from_id == to_id:
+                continue
+            cur = c.execute(
+                "INSERT OR IGNORE INTO knowledge_relations (from_id, to_id, type, note) VALUES (?,?,?,?)",
+                (from_id, to_id, r.get("type", "related"), r.get("note", "")),
+            )
+            stats["relation_count"] += cur.rowcount
+
+    return stats
+
+
 def get_point(point_id):
     with _conn() as c:
         row = c.execute(

@@ -73,6 +73,7 @@ const API = {
   aiGenerate: (text, subject) => API._req("POST", "/api/ai/generate", { text, subject }, null),
   // AI 关联小知识点到同学科大知识点（慢请求）
   attachSmall: () => API._req("POST", "/api/ai/attach-small", {}, null),
+  importBatch: (result, tag) => API._req("POST", "/api/import/batch", { result, tag }, null),
   getConfig: () => API._req("GET", "/api/config"),
 
   // 对比维度（对比网络视图）

@@ -59,8 +59,84 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 let aiResult = null;  // 缓存 AI 返回结果，供入库用
 
+const AI_CHUNK_LIMIT = 2400;
+
 function bindGenerate() {
   document.getElementById("generateBtn").addEventListener("click", onGenerate);
+}
+
+function splitTextForAI(text, maxLen = AI_CHUNK_LIMIT) {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= maxLen) return [normalized];
+
+  const blocks = normalized
+    .split(/\n(?=#{1,6}\s|\d+[.、]\s|[一二三四五六七八九十]+[、.]\s)/)
+    .flatMap(part => part.split(/\n{2,}/))
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  const chunks = [];
+  let current = "";
+  const pushCurrent = () => {
+    if (current.trim()) chunks.push(current.trim());
+    current = "";
+  };
+
+  for (const block of blocks.length ? blocks : [normalized]) {
+    if (block.length > maxLen) {
+      pushCurrent();
+      for (let i = 0; i < block.length; i += maxLen) {
+        chunks.push(block.slice(i, i + maxLen).trim());
+      }
+      continue;
+    }
+    const next = current ? `${current}\n\n${block}` : block;
+    if (next.length > maxLen) {
+      pushCurrent();
+      current = block;
+    } else {
+      current = next;
+    }
+  }
+  pushCurrent();
+  return chunks;
+}
+
+function mergeAiResults(results) {
+  const merged = { points: [], comparisons: [], relations: [] };
+  const pointSeen = new Set();
+  const comparisonSeen = new Set();
+  const relationSeen = new Set();
+
+  results.forEach(result => {
+    (result.points || []).forEach(point => {
+      const key = (point.title || "").trim();
+      if (!key || pointSeen.has(key)) return;
+      pointSeen.add(key);
+      merged.points.push(point);
+    });
+
+    (result.comparisons || []).forEach(cmp => {
+      const a = (cmp.a || "").trim();
+      const b = (cmp.b || "").trim();
+      const key = [a, b].sort().join("::");
+      if (!a || !b || comparisonSeen.has(key)) return;
+      comparisonSeen.add(key);
+      merged.comparisons.push(cmp);
+    });
+
+    (result.relations || []).forEach(rel => {
+      const from = (rel.from || rel.from_title || "").trim();
+      const to = (rel.to || rel.to_title || "").trim();
+      const type = rel.type || "related";
+      const key = `${from}::${to}::${type}`;
+      if (!from || !to || relationSeen.has(key)) return;
+      relationSeen.add(key);
+      merged.relations.push(rel);
+    });
+  });
+
+  return merged;
 }
 
 async function onGenerate() {
@@ -75,13 +151,25 @@ async function onGenerate() {
   }
 
   btn.disabled = true;
-  progress.textContent = "⏳ AI 正在拆卡，约需 10-30 秒，请稍候...";
+  const chunks = splitTextForAI(text);
+  progress.textContent = chunks.length === 1
+    ? "⏳ AI 正在拆卡，约需 10-30 秒，请稍候..."
+    : `⏳ 文本较长，已拆成 ${chunks.length} 段，正在生成第 1 段...`;
   try {
-    const result = await API.aiGenerate(text, subject);
+    const results = [];
+    for (let i = 0; i < chunks.length; i++) {
+      if (chunks.length > 1) {
+        progress.textContent = `⏳ AI 正在拆卡：第 ${i + 1} / ${chunks.length} 段...`;
+      }
+      results.push(await API.aiGenerate(chunks[i], subject));
+    }
+    const result = mergeAiResults(results);
     aiResult = result;
     renderResult(result);
     document.getElementById("resultPanel").style.display = "";
-    progress.textContent = "";
+    progress.textContent = chunks.length === 1
+      ? ""
+      : `✅ 已完成 ${chunks.length} 段生成，合并为 ${result.points.length} 个知识点。`;
   } catch (e) {
     progress.textContent = "";
     const keyHint = /key|api key|deepseek_api_key/i.test(e.message)
@@ -175,86 +263,10 @@ async function onImport() {
   btn.disabled = true;
   msg.textContent = "⏳ 入库中...";
 
-  let okCount = 0;
-  let failCount = 0;
   try {
-    // 普通知识点（含所有扩展字段）
     const subjectTag = getSubject();
-    for (const p of (aiResult.points || [])) {
-      const cards = (p.cards || []).filter(c => c.question && c.answer).map(c => ({
-        type: c.type, question: c.question, answer: c.answer,
-      }));
-      try {
-        await API.createPoint({
-          title: p.title,
-          tag: subjectTag,
-          size: p.size || "big",
-          duplicate_of: p.duplicate_of || "",
-          mechanism: p.mechanism || "",
-          clinical: p.clinical || "",
-          mnemonic: p.mnemonic || "",
-          diagnosis: p.diagnosis || "",
-          treatment: p.treatment || "",
-          differential: p.differential || "",
-          etiology: p.etiology || "",
-          prevention: p.prevention || "",
-          cards,
-          nodes: p.nodes && p.nodes.length ? p.nodes : null,
-        }, null);
-        okCount++;
-      } catch {
-        failCount++;
-      }
-    }
-    // 对照卡：每个对照维度做成一张问答卡，同时存结构化维度（供对比网络用）
-    for (const c of (aiResult.comparisons || [])) {
-      const dims = (c.dimensions || []).filter(d => d && d.dim);
-      const cards = [];
-      cards.push({
-        type: "compare",
-        question: `${c.a} 与 ${c.b} 的主要区别？`,
-        answer: dims.map(d => `【${d.dim}】${d.value_a} vs ${d.value_b}`).join("；"),
-      });
-      try {
-        await API.createPoint({
-          title: `${c.a} vs ${c.b} 对比`,
-          tag: subjectTag,
-          size: "big",
-          mechanism: "",
-          clinical: "易混概念对照，重点辨析",
-          mnemonic: "",
-          // differential 仍存一份（兼容旧读取、复习页展示）
-          differential: dims.map(d => `${d.dim}：${d.value_a} vs ${d.value_b}`).join("；"),
-          // 结构化维度：供对比网络视图按维度渲染
-          comparison: { a: c.a, b: c.b, dimensions: dims },
-          cards,
-        }, null);
-        okCount++;
-      } catch {
-        failCount++;
-      }
-    }
-
-    // 知识关联入库（用标题匹配知识点 id）
-    if (aiResult.relations && aiResult.relations.length) {
-      msg.textContent = "⏳ 入库关联...";
-      const allPoints = await API.listPoints();
-      const titleToId = {};
-      allPoints.forEach(p => { titleToId[p.title] = p.id; });
-      const relations = [];
-      for (const r of aiResult.relations) {
-        const fromId = titleToId[r.from] || titleToId[r.from_title];
-        const toId = titleToId[r.to] || titleToId[r.to_title];
-        if (fromId && toId && fromId !== toId) {
-          relations.push({ from_id: fromId, to_id: toId, type: r.type || "related", note: r.note || "" });
-        }
-      }
-      if (relations.length) {
-        try { await API.createRelations(relations, null); } catch (e) { /* 忽略关联失败 */ }
-      }
-    }
-
-    msg.textContent = `✅ 已入库 ${okCount} 个知识点${failCount ? `（${failCount} 个失败）` : ""}`;
+    const result = await API.importBatch(aiResult, subjectTag);
+    msg.textContent = `✅ 已入库 ${result.point_count} 个知识点，${result.card_count} 张卡片，${result.relation_count} 条关联`;
     aiResult = null;
     document.getElementById("resultPanel").style.display = "none";
     document.getElementById("sourceText").value = "";
