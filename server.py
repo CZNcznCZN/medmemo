@@ -45,6 +45,7 @@ from db import (
     delete_points_by_tag, retag_points,
     get_wrong_cards, get_review_stats,
     import_ai_result,
+    write_backup_snapshot,
 )
 from ai import generate_cards, attach_small_points
 from config import load_config, has_api_key
@@ -383,8 +384,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_backup_import(self, body):
         """从完整备份 JSON 恢复数据。当前数据会被备份内容替换。"""
+        safety_backup = write_backup_snapshot("before-restore")
         stats = import_backup(body)
-        self._send_json({"ok": True, "stats": stats}, 201)
+        self._send_json({"ok": True, "stats": stats, "safety_backup": safety_backup}, 201)
 
     def _handle_batch_relations(self, body):
         """批量创建知识点关联。"""

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import datetime, date, timedelta
 
 from sm2 import review, RATING_TO_QUALITY
-from paths import DB_PATH
+from paths import DB_PATH, USER_DATA_DIR
 
 
 @contextmanager
@@ -979,6 +979,22 @@ def export_all():
         "exported_at": _now(),
         **exported,
     }
+
+
+def write_backup_snapshot(prefix="medmemo-backup"):
+    """把当前学习数据写入用户数据目录下的 backups，返回文件路径。
+
+    用于恢复前的安全快照，不包含 config.json 或 API key。
+    """
+    backup_dir = os.path.join(USER_DATA_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"{prefix}-{timestamp}.json"
+    path = os.path.join(backup_dir, filename)
+    data = export_all()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return path
 
 
 def import_backup(data):

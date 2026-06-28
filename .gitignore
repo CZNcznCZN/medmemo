@@ -1,6 +1,7 @@
 # User data and secrets
 config.json
 flashcards.db
+backups/
 *.db
 *.sqlite
 *.sqlite3

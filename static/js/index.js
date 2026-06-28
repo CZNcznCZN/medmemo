@@ -124,7 +124,8 @@ function bindBackupImport() {
       const backup = JSON.parse(await file.text());
       const result = await API.importBackup(backup);
       const s = result.stats || {};
-      alert(`恢复完成：${s.points || 0} 个知识点，${s.cards || 0} 张卡片，${s.reviews || 0} 条复习记录。`);
+      const safety = result.safety_backup ? `\n\n恢复前的当前数据已自动保存到：\n${result.safety_backup}` : "";
+      alert(`恢复完成：${s.points || 0} 个知识点，${s.cards || 0} 张卡片，${s.reviews || 0} 条复习记录。${safety}`);
       currentTag = "";
       await loadTags();
       await loadStats();
