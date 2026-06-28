@@ -148,6 +148,15 @@ def init_db():
                 FOREIGN KEY(to_node) REFERENCES knowledge_nodes(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS wrong_card_state (
+                card_id INTEGER PRIMARY KEY,
+                wrong_count INTEGER DEFAULT 0,
+                correct_streak INTEGER DEFAULT 0,
+                active INTEGER DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due_date);
             CREATE INDEX IF NOT EXISTS idx_cards_point ON cards(point_id);
             CREATE INDEX IF NOT EXISTS idx_relations_from ON knowledge_relations(from_id);
@@ -159,6 +168,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_cmpdims_point ON comparison_dims(point_id);
             CREATE INDEX IF NOT EXISTS idx_customedges_from ON custom_edges(from_node);
             CREATE INDEX IF NOT EXISTS idx_customedges_to ON custom_edges(to_node);
+            CREATE INDEX IF NOT EXISTS idx_wrong_state_active ON wrong_card_state(active);
             """
         )
         # 增量迁移：为旧数据库新增扩展列（幂等，列已存在则跳过）
@@ -448,6 +458,7 @@ def get_point(point_id):
 def list_points(tag=None):
     """列出所有知识点，可按科目筛选。"""
     with _conn() as c:
+        _backfill_wrong_state(c)
         if tag:
             rows = c.execute(
                 "SELECT * FROM knowledge_points WHERE tag = ? ORDER BY id DESC",
@@ -812,37 +823,74 @@ def review_card(card_id, rating):
             "INSERT INTO reviews (card_id, rating, quality, reviewed_at) VALUES (?,?,?,?)",
             (card_id, rating, quality, _now()),
         )
+        if rating in ("again", "hard"):
+            c.execute(
+                """INSERT INTO wrong_card_state
+                   (card_id, wrong_count, correct_streak, active, updated_at)
+                   VALUES (?, 1, 0, 1, ?)
+                   ON CONFLICT(card_id) DO UPDATE SET
+                     wrong_count = wrong_count + 1,
+                     correct_streak = 0,
+                     active = 1,
+                     updated_at = excluded.updated_at""",
+                (card_id, _now()),
+            )
+        elif rating in ("good", "easy"):
+            state = c.execute(
+                "SELECT active, correct_streak FROM wrong_card_state WHERE card_id = ?",
+                (card_id,),
+            ).fetchone()
+            if state and state["active"]:
+                streak = state["correct_streak"] + 1
+                c.execute(
+                    """UPDATE wrong_card_state
+                       SET correct_streak = ?, active = ?, updated_at = ?
+                       WHERE card_id = ?""",
+                    (streak, 0 if streak >= 2 else 1, _now(), card_id),
+                )
     return {"easiness": new_e, "interval": new_i, "repetition": new_r, "due_date": due}
 
 
+def _backfill_wrong_state(c):
+    """把旧 reviews 中的错题回填到 wrong_card_state，仅补不存在的卡片。"""
+    c.execute(
+        """INSERT OR IGNORE INTO wrong_card_state
+           (card_id, wrong_count, correct_streak, active, updated_at)
+           SELECT card_id, COUNT(*) AS wrong_count, 0, 1, ?
+           FROM reviews
+           WHERE rating IN ('again', 'hard')
+           GROUP BY card_id""",
+        (_now(),),
+    )
+
+
 def get_wrong_cards(tag=None, min_wrong=1):
-    """获取"错过的"卡片（reviews 里至少有 1 次 again 评分），按错误次数降序。
+    """获取当前仍在错题池里的卡片，按错误次数降序。
 
     min_wrong: 至少答错几次（默认 1）。
     返回 [{id, card_id, point_id, wrong_count, title, tag, question, answer, type,
            easiness, interval, repetition, due_date}]
     （id 和 card_id 同值，id 供前端 reviewCard(card.id) 用）
     """
-    where = ["sub.wrong >= ?"]
+    where = ["ws.active = 1", "ws.wrong_count >= ?"]
     params = [min_wrong]
     if tag:
         where.append("k.tag = ?")
         params.append(tag)
     where_clause = " AND ".join(where)
     with _conn() as c:
+        _backfill_wrong_state(c)
         rows = c.execute(
             f"""SELECT c.id AS id, c.id AS card_id, c.point_id, c.type, c.question, c.answer,
                        c.easiness, c.interval, c.repetition, c.due_date,
                        k.title, k.tag,
-                       sub.wrong AS wrong_count
-                FROM (
-                    SELECT card_id, COUNT(*) AS wrong
-                    FROM reviews WHERE rating IN ('again', 'hard') GROUP BY card_id
-                ) sub
-                JOIN cards c ON c.id = sub.card_id
+                       ws.wrong_count AS wrong_count,
+                       ws.correct_streak AS correct_streak
+                FROM wrong_card_state ws
+                JOIN cards c ON c.id = ws.card_id
                 JOIN knowledge_points k ON k.id = c.point_id
                 WHERE {where_clause}
-                ORDER BY sub.wrong DESC, c.id""",
+                ORDER BY ws.wrong_count DESC, c.id""",
             params,
         ).fetchall()
     return [dict(r) for r in rows]
@@ -866,14 +914,14 @@ def get_review_stats(tag=None):
             f"""SELECT rating, COUNT(*) AS n {base} GROUP BY rating""", params
         ):
             by_rating[r["rating"]] = r["n"]
-        # 错题数（distinct 卡片）
+        # 当前错题池数量（已连续答对毕业的卡不再计入）
         wrong_tag_clause = "AND k.tag = ?" if tag else ""
         wrong_params = (tag,) if tag else ()
         wrong_cards = c.execute(
-            f"""SELECT COUNT(DISTINCT r.card_id) AS n
-                FROM reviews r JOIN cards c ON c.id = r.card_id
+            f"""SELECT COUNT(*) AS n
+                FROM wrong_card_state ws JOIN cards c ON c.id = ws.card_id
                 JOIN knowledge_points k ON k.id = c.point_id
-                WHERE r.rating IN ('again', 'hard') {wrong_tag_clause}""",
+                WHERE ws.active = 1 {wrong_tag_clause}""",
             wrong_params,
         ).fetchone()["n"]
     correct = by_rating.get("good", 0) + by_rating.get("easy", 0)
@@ -984,6 +1032,7 @@ _BACKUP_TABLES = {
     "relations": "knowledge_relations",
     "nodes": "knowledge_nodes",
     "reviews": "reviews",
+    "wrong_card_state": "wrong_card_state",
     "comparison_dims": "comparison_dims",
     "custom_edges": "custom_edges",
 }
@@ -991,6 +1040,7 @@ _BACKUP_TABLES = {
 _BACKUP_DELETE_ORDER = [
     "custom_edges",
     "comparison_dims",
+    "wrong_card_state",
     "reviews",
     "knowledge_relations",
     "knowledge_nodes",
@@ -1004,6 +1054,7 @@ _BACKUP_INSERT_ORDER = [
     "nodes",
     "relations",
     "reviews",
+    "wrong_card_state",
     "comparison_dims",
     "custom_edges",
 ]
@@ -1041,8 +1092,10 @@ def export_all():
     with _conn() as c:
         exported = {}
         for key, table in _BACKUP_TABLES.items():
+            columns = _table_columns(c, table)
+            order_col = "id" if "id" in columns else next(iter(columns))
             exported[key] = [
-                dict(r) for r in c.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+                dict(r) for r in c.execute(f"SELECT * FROM {table} ORDER BY {order_col}").fetchall()
             ]
     return {
         "version": 2,

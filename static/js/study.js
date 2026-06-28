@@ -29,6 +29,7 @@ function bindStudyEvents() {
       // subject/point/wrong 三模式：wrong 时两个面板都隐藏
       document.getElementById("subjectPanel").style.display = selectedMode === "subject" ? "" : "none";
       document.getElementById("pointPanel").style.display = selectedMode === "point" ? "" : "none";
+      document.getElementById("wrongModeHint").style.display = selectedMode === "wrong" ? "" : "none";
       updateStartBtn();
     });
   });
@@ -135,6 +136,17 @@ function updateStartBtn() {
   }
 }
 
+function setEmptyStateText() {
+  const empty = document.getElementById("emptyState");
+  if (selectedMode === "wrong") {
+    empty.querySelector("h2").textContent = "错题池清空啦！";
+    empty.querySelector("p").textContent = "这些卡片已经连续答对毕业。以后如果再答错，会重新进入错题重练。";
+  } else {
+    empty.querySelector("h2").textContent = "今天的复习完成啦！";
+    empty.querySelector("p").textContent = "没有到期的卡片了。理解 + 持久，慢慢来才记得牢。";
+  }
+}
+
 /* ---------------- 开始复习 ---------------- */
 
 async function startStudy() {
@@ -156,7 +168,8 @@ async function startStudy() {
 async function loadQueue() {
   try {
     if (selectedMode === "wrong") {
-      // 错题重练：拉取所有答错过(at least 1 次 again)的卡片，按错误次数降序
+      // 错题重练：拉取当前仍在错题池里的卡片，按错误次数降序。
+      // 连续答对 2 次会从错题池毕业；再次答错会重新进入。
       queue = await API.getWrongCards(selectedTag);
     } else {
       // 按知识点模式：只复习选中的多个知识点；按科目模式：按科目筛选
@@ -168,6 +181,7 @@ async function loadQueue() {
     if (queue.length === 0) {
       document.getElementById("cardArea").style.display = "none";
       document.getElementById("emptyState").style.display = "";
+      setEmptyStateText();
       document.getElementById("progressText").textContent = "0 / 0";
       document.getElementById("progressFill").style.width = "100%";
       return;
@@ -288,12 +302,19 @@ async function rate(rating) {
       queue.push({
         ...card,
         wrong_count: (card.wrong_count || 0) + 1,
+        correct_streak: 0,
       });
+    } else if (selectedMode === "wrong" && (rating === "good" || rating === "easy")) {
+      const nextStreak = (card.correct_streak || 0) + 1;
+      if (nextStreak < 2) {
+        queue.push({ ...card, correct_streak: nextStreak });
+      }
     }
     currentIdx++;
     if (currentIdx >= queue.length) {
       document.getElementById("cardArea").style.display = "none";
       document.getElementById("emptyState").style.display = "";
+      setEmptyStateText();
       document.getElementById("progressText").textContent = `${queue.length} / ${queue.length}`;
       document.getElementById("progressFill").style.width = "100%";
     } else {
