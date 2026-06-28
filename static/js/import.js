@@ -117,12 +117,18 @@ function splitTextForAI(text, maxLen = AI_CHUNK_LIMIT) {
 }
 
 function mergeAiResults(results) {
-  const merged = { points: [], comparisons: [], relations: [] };
+  const merged = { points: [], comparisons: [], relations: [], _repair_warnings: [] };
   const pointSeen = new Set();
   const comparisonSeen = new Set();
   const relationSeen = new Set();
 
   results.forEach(result => {
+    (result._repair_warnings || []).forEach(warning => {
+      if (warning && !merged._repair_warnings.includes(warning)) {
+        merged._repair_warnings.push(warning);
+      }
+    });
+
     (result.points || []).forEach(point => {
       const key = (point.title || "").trim();
       if (!key || pointSeen.has(key)) return;
@@ -399,6 +405,9 @@ function validateEditedResult(result) {
 
 function analyzeEditedResult(result) {
   const issues = [];
+  (result._repair_warnings || []).forEach(warning => {
+    issues.push({ level: "warn", text: warning });
+  });
   const titleMap = new Map();
   result.points.forEach((point, index) => {
     const name = point.title || `第 ${index + 1} 个知识点`;

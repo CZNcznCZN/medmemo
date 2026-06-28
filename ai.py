@@ -272,25 +272,141 @@ def _loads_ai_json(candidate):
             raise first_error
 
 
-def extract_json(text):
-    """从模型回复中提取 JSON（兼容被包在代码块或多余文本里的情况）。"""
+def _strip_markdown_fence(text):
     text = text.strip()
-    # 去掉可能的 ```json ... ``` 包裹
-    if text.startswith("```"):
-        lines = text.split("\n")
-        start = 1
-        end = len(lines)
-        for i in range(1, len(lines)):
-            if lines[i].strip().startswith("```"):
-                end = i
-                break
-        text = "\n".join(lines[start:end])
-    # 找第一个 { 到最后一个 }
-    s = text.find("{")
-    e = text.rfind("}")
-    if s == -1 or e == -1:
-        raise ValueError("回复中未找到 JSON 对象。")
-    return _loads_ai_json(text[s : e + 1])
+    if not text.startswith("```"):
+        return text
+    lines = text.split("\n")
+    start = 1
+    end = len(lines)
+    for i in range(1, len(lines)):
+        if lines[i].strip().startswith("```"):
+            end = i
+            break
+    return "\n".join(lines[start:end]).strip()
+
+
+def _iter_json_candidates(text):
+    cleaned = _strip_markdown_fence(text)
+    seen = set()
+
+    def add(candidate):
+        candidate = candidate.strip()
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            return candidate
+        return None
+
+    candidate = add(cleaned)
+    if candidate:
+        yield candidate
+
+    first = cleaned.find("{")
+    last = cleaned.rfind("}")
+    if first != -1 and last != -1 and last > first:
+        candidate = add(cleaned[first:last + 1])
+        if candidate:
+            yield candidate
+    if first != -1:
+        candidate = add(cleaned[first:])
+        if candidate:
+            yield candidate
+
+
+def _extract_complete_objects_from_array(text, key):
+    marker = re.search(rf'"{re.escape(key)}"\s*:\s*\[', text)
+    if not marker:
+        return []
+
+    items = []
+    start = marker.end()
+    depth = 0
+    object_start = None
+    in_string = False
+    escaped = False
+
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                object_start = idx
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and object_start is not None:
+                    raw_object = text[object_start:idx + 1]
+                    try:
+                        items.append(_loads_ai_json(raw_object))
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    object_start = None
+        elif ch == "]" and depth == 0:
+            break
+    return items
+
+
+def _salvage_ai_result(text):
+    cleaned = _strip_markdown_fence(text)
+    first = cleaned.find("{")
+    if first != -1:
+        cleaned = cleaned[first:]
+    points = _extract_complete_objects_from_array(cleaned, "points")
+    comparisons = _extract_complete_objects_from_array(cleaned, "comparisons")
+    relations = _extract_complete_objects_from_array(cleaned, "relations")
+    if not points and not comparisons and not relations:
+        return None
+    return {
+        "points": points,
+        "comparisons": comparisons,
+        "relations": relations,
+        "_repair_warnings": ["AI 返回的 JSON 不完整，已尽量保留可解析的完整条目。"],
+    }
+
+
+def _normalize_ai_result(data):
+    if not isinstance(data, dict):
+        raise ValueError("AI 返回的 JSON 顶层不是对象。")
+    data.setdefault("points", [])
+    data.setdefault("comparisons", [])
+    data.setdefault("relations", [])
+    return data
+
+
+def extract_json(text):
+    """Extract and repair the JSON object returned by the model."""
+    last_error = None
+    cleaned = _strip_markdown_fence(text)
+    for candidate in _iter_json_candidates(text):
+        try:
+            data = _normalize_ai_result(_loads_ai_json(candidate))
+            idx = cleaned.find(candidate)
+            tail = cleaned[idx + len(candidate):].strip() if idx != -1 else ""
+            if tail and re.search(r'[{}\[\]":]', tail):
+                data.setdefault("_repair_warnings", []).append(
+                    "AI 返回的 JSON 尾部不完整，已保留前面可解析的内容。"
+                )
+            return data
+        except (json.JSONDecodeError, ValueError) as e:
+            last_error = e
+
+    salvaged = _salvage_ai_result(text)
+    if salvaged:
+        return salvaged
+
+    _write_ai_json_debug(cleaned, cleaned, last_error or "No parseable JSON found")
+    raise ValueError(f"AI returned unparseable JSON: {last_error or 'no JSON object found'}")
 
 
 def generate_cards(text, subject, existing_titles=None):
