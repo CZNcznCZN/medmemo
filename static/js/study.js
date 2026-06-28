@@ -6,6 +6,7 @@ let flipped = false;
 let selectedTag = "";
 let selectedMode = "subject";      // subject(按科目) / point(按知识点)
 let selectedPointIds = [];         // 按知识点模式选中的知识点 id 数组（多选）
+let lastReviewUndo = null;
 
 const REL_TYPE_LABELS = {
   cause: "因果", compare: "对比", upstream: "上游", downstream: "下游", related: "相关"
@@ -37,6 +38,7 @@ function bindStudyEvents() {
   document.getElementById("pointSubjectFilter").addEventListener("change", () => loadStudyPoints());
   // 开始复习
   document.getElementById("startStudyBtn").addEventListener("click", startStudy);
+  document.getElementById("undoReviewBtn").addEventListener("click", undoLastReview);
 }
 
 /* ---------------- 按科目：加载科目按钮 ---------------- */
@@ -156,6 +158,7 @@ async function startStudy() {
   }
   document.getElementById("tagSelector").style.display = "none";
   document.getElementById("studyArea").style.display = "";
+  hideReviewFeedback();
   await loadQueue();
   document.querySelectorAll(".rating-btn").forEach(btn => {
     btn.addEventListener("click", () => rate(btn.dataset.rating));
@@ -232,6 +235,21 @@ function showCard() {
   updateProgress();
 }
 
+function showReviewFeedback(text, undoState = null) {
+  lastReviewUndo = undoState;
+  const box = document.getElementById("studyFeedback");
+  const label = document.getElementById("studyFeedbackText");
+  const undoBtn = document.getElementById("undoReviewBtn");
+  label.textContent = text;
+  undoBtn.style.display = undoState ? "" : "none";
+  box.style.display = "";
+}
+
+function hideReviewFeedback() {
+  lastReviewUndo = null;
+  document.getElementById("studyFeedback").style.display = "none";
+}
+
 /* ---------------- 翻面（提取练习核心） ---------------- */
 
 function flip() {
@@ -296,8 +314,12 @@ document.addEventListener("keydown", (e) => {
 
 async function rate(rating) {
   const card = queue[currentIdx];
+  const before = {
+    queue: queue.map(item => ({ ...item })),
+    currentIdx,
+  };
   try {
-    await API.reviewCard(card.id, rating);
+    const review = await API.reviewCard(card.id, rating);
     if (selectedMode === "wrong" && (rating === "again" || rating === "hard")) {
       queue.push({
         ...card,
@@ -311,6 +333,10 @@ async function rate(rating) {
       }
     }
     currentIdx++;
+    showReviewFeedback(`已记录「${ratingLabel(rating)}」`, {
+      reviewId: review.review_id,
+      ...before,
+    });
     if (currentIdx >= queue.length) {
       document.getElementById("cardArea").style.display = "none";
       document.getElementById("emptyState").style.display = "";
@@ -322,5 +348,25 @@ async function rate(rating) {
     }
   } catch (e) {
     alert("评分失败：" + e.message);
+  }
+}
+
+function ratingLabel(rating) {
+  return { again: "重记", hard: "困难", good: "良好", easy: "简单" }[rating] || rating;
+}
+
+async function undoLastReview() {
+  if (!lastReviewUndo) return;
+  const undo = lastReviewUndo;
+  try {
+    await API.undoReview(undo.reviewId);
+    queue = undo.queue;
+    currentIdx = undo.currentIdx;
+    document.getElementById("emptyState").style.display = "none";
+    document.getElementById("cardArea").style.display = "";
+    showCard();
+    showReviewFeedback("已撤销上次评分", null);
+  } catch (e) {
+    alert("撤销失败：" + e.message);
   }
 }

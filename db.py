@@ -157,6 +157,23 @@ def init_db():
                 FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS review_snapshots (
+                review_id INTEGER PRIMARY KEY,
+                card_id INTEGER NOT NULL,
+                prev_easiness REAL NOT NULL,
+                prev_interval INTEGER NOT NULL,
+                prev_repetition INTEGER NOT NULL,
+                prev_due_date TEXT NOT NULL,
+                prev_wrong_exists INTEGER DEFAULT 0,
+                prev_wrong_count INTEGER DEFAULT 0,
+                prev_correct_streak INTEGER DEFAULT 0,
+                prev_wrong_active INTEGER DEFAULT 0,
+                prev_wrong_updated_at TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(review_id) REFERENCES reviews(id) ON DELETE CASCADE,
+                FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due_date);
             CREATE INDEX IF NOT EXISTS idx_cards_point ON cards(point_id);
             CREATE INDEX IF NOT EXISTS idx_relations_from ON knowledge_relations(from_id);
@@ -169,6 +186,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_customedges_from ON custom_edges(from_node);
             CREATE INDEX IF NOT EXISTS idx_customedges_to ON custom_edges(to_node);
             CREATE INDEX IF NOT EXISTS idx_wrong_state_active ON wrong_card_state(active);
+            CREATE INDEX IF NOT EXISTS idx_review_snapshots_card ON review_snapshots(card_id);
             """
         )
         # 增量迁移：为旧数据库新增扩展列（幂等，列已存在则跳过）
@@ -802,13 +820,17 @@ def review_card(card_id, rating):
 
     with _conn() as c:
         row = c.execute(
-            "SELECT easiness, interval, repetition FROM cards WHERE id = ?",
+            "SELECT easiness, interval, repetition, due_date FROM cards WHERE id = ?",
             (card_id,),
         ).fetchone()
         if row is None:
             raise KeyError(f"卡片不存在: {card_id}")
 
         easiness, interval, repetition = row["easiness"], row["interval"], row["repetition"]
+        prev_wrong = c.execute(
+            "SELECT * FROM wrong_card_state WHERE card_id = ?",
+            (card_id,),
+        ).fetchone()
         new_e, new_i, new_r, days = review(easiness, interval, repetition, quality)
 
         due = (date.today() + timedelta(days=days)).isoformat()
@@ -819,9 +841,26 @@ def review_card(card_id, rating):
             (new_e, new_i, new_r, due, card_id),
         )
         # 记录本次评分（复习历史，供后续保留率/leech/热力图统计）
-        c.execute(
+        cur = c.execute(
             "INSERT INTO reviews (card_id, rating, quality, reviewed_at) VALUES (?,?,?,?)",
             (card_id, rating, quality, _now()),
+        )
+        review_id = cur.lastrowid
+        c.execute(
+            """INSERT INTO review_snapshots
+               (review_id, card_id, prev_easiness, prev_interval, prev_repetition, prev_due_date,
+                prev_wrong_exists, prev_wrong_count, prev_correct_streak, prev_wrong_active,
+                prev_wrong_updated_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                review_id, card_id, easiness, interval, repetition, row["due_date"],
+                1 if prev_wrong else 0,
+                prev_wrong["wrong_count"] if prev_wrong else 0,
+                prev_wrong["correct_streak"] if prev_wrong else 0,
+                prev_wrong["active"] if prev_wrong else 0,
+                prev_wrong["updated_at"] if prev_wrong else "",
+                _now(),
+            ),
         )
         if rating in ("again", "hard"):
             c.execute(
@@ -848,7 +887,58 @@ def review_card(card_id, rating):
                        WHERE card_id = ?""",
                     (streak, 0 if streak >= 2 else 1, _now(), card_id),
                 )
-    return {"easiness": new_e, "interval": new_i, "repetition": new_r, "due_date": due}
+    return {"review_id": review_id, "easiness": new_e, "interval": new_i, "repetition": new_r, "due_date": due}
+
+
+def undo_review(review_id):
+    """撤销一条最近评分，恢复卡片调度和错题池状态。"""
+    with _conn() as c:
+        snap = c.execute(
+            """SELECT rs.*, r.rating
+               FROM review_snapshots rs
+               JOIN reviews r ON r.id = rs.review_id
+               WHERE rs.review_id = ?""",
+            (review_id,),
+        ).fetchone()
+        if snap is None:
+            raise KeyError(f"复习记录不存在或不可撤销: {review_id}")
+        latest = c.execute(
+            "SELECT MAX(id) AS id FROM reviews WHERE card_id = ?",
+            (snap["card_id"],),
+        ).fetchone()["id"]
+        if latest != review_id:
+            raise ValueError("只能撤销该卡片的最近一次评分")
+
+        c.execute(
+            """UPDATE cards
+               SET easiness = ?, interval = ?, repetition = ?, due_date = ?
+               WHERE id = ?""",
+            (
+                snap["prev_easiness"], snap["prev_interval"],
+                snap["prev_repetition"], snap["prev_due_date"], snap["card_id"],
+            ),
+        )
+        if snap["prev_wrong_exists"]:
+            c.execute(
+                """INSERT INTO wrong_card_state
+                   (card_id, wrong_count, correct_streak, active, updated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(card_id) DO UPDATE SET
+                     wrong_count = excluded.wrong_count,
+                     correct_streak = excluded.correct_streak,
+                     active = excluded.active,
+                     updated_at = excluded.updated_at""",
+                (
+                    snap["card_id"], snap["prev_wrong_count"],
+                    snap["prev_correct_streak"], snap["prev_wrong_active"],
+                    snap["prev_wrong_updated_at"],
+                ),
+            )
+        else:
+            c.execute("DELETE FROM wrong_card_state WHERE card_id = ?", (snap["card_id"],))
+        c.execute("DELETE FROM review_snapshots WHERE review_id = ?", (review_id,))
+        c.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+    return {"ok": True, "card_id": snap["card_id"]}
 
 
 def _backfill_wrong_state(c):
@@ -1032,6 +1122,7 @@ _BACKUP_TABLES = {
     "relations": "knowledge_relations",
     "nodes": "knowledge_nodes",
     "reviews": "reviews",
+    "review_snapshots": "review_snapshots",
     "wrong_card_state": "wrong_card_state",
     "comparison_dims": "comparison_dims",
     "custom_edges": "custom_edges",
@@ -1041,6 +1132,7 @@ _BACKUP_DELETE_ORDER = [
     "custom_edges",
     "comparison_dims",
     "wrong_card_state",
+    "review_snapshots",
     "reviews",
     "knowledge_relations",
     "knowledge_nodes",
@@ -1054,6 +1146,7 @@ _BACKUP_INSERT_ORDER = [
     "nodes",
     "relations",
     "reviews",
+    "review_snapshots",
     "wrong_card_state",
     "comparison_dims",
     "custom_edges",

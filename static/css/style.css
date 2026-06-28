@@ -502,6 +502,32 @@ textarea { resize: vertical; }
 .rate-hard { background: var(--warn); }
 .rate-good { background: var(--primary); }
 .rate-easy { background: var(--success); }
+.study-feedback {
+  max-width: 760px;
+  margin: 12px auto 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.study-feedback button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.study-feedback button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 
 /* 空状态 */
 .empty-state {

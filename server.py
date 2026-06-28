@@ -33,7 +33,7 @@ from urllib.parse import urlparse, parse_qs
 import db
 from db import (
     init_db, stats, list_points, get_point, create_point, update_point, update_point_with_cards,
-    delete_point, list_cards, get_due_cards, review_card, create_card,
+    delete_point, list_cards, get_due_cards, review_card, undo_review, create_card,
     delete_card, update_card, seed_if_empty, export_all, import_backup, list_point_titles,
     get_tags, get_relations, create_relation, delete_relation,
     batch_create_relations, get_all_relations, list_points_with_due,
@@ -277,6 +277,10 @@ class Handler(BaseHTTPRequestHandler):
             m = re.match(r"^/api/cards/review/(\d+)$", path)
             if m:
                 result = review_card(int(m.group(1)), body.get("rating"))
+                return self._send_json(result)
+            m = re.match(r"^/api/reviews/(\d+)/undo$", path)
+            if m:
+                result = undo_review(int(m.group(1)))
                 return self._send_json(result)
             return self._send_error("未知路径", 404)
         except (ValueError, RuntimeError) as e:

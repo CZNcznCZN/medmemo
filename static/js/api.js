@@ -59,6 +59,7 @@ const API = {
     return API._req("GET", `/api/cards/due${params.length ? "?" + params.join("&") : ""}`).then(r => r.cards);
   },
   reviewCard: (id, rating) => API._req("POST", `/api/cards/review/${id}`, { rating }),
+  undoReview: (reviewId) => API._req("POST", `/api/reviews/${reviewId}/undo`, {}),
   deleteCard: (id) => API._req("DELETE", `/api/cards/${id}`),
   updateCard: (id, data) => API._req("PUT", `/api/cards/${id}`, data),
   getWrongCards: (tag) => API._req("GET", `/api/cards/wrong${tag ? "?tag=" + encodeURIComponent(tag) : ""}`).then(r => r.cards),
