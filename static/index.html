@@ -99,7 +99,14 @@
 
     <!-- 知识点列表 -->
     <section class="panel">
-      <h2>📚 我的知识点</h2>
+      <div class="points-head">
+        <h2>📚 我的知识点</h2>
+        <span id="pointsCount" class="muted"></span>
+      </div>
+      <div class="points-search">
+        <input type="search" id="pointSearch" placeholder="搜索标题、理解字段或卡片内容">
+        <button type="button" id="clearPointSearch" title="清空搜索">清空</button>
+      </div>
       <div id="pointsList" class="points-list"><p class="muted">加载中...</p></div>
     </section>
   </main>

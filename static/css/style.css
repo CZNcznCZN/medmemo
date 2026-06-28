@@ -252,6 +252,35 @@ textarea { resize: vertical; }
 
 /* ---------------- 知识点列表 ---------------- */
 
+.points-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.points-head h2 { margin-bottom: 0; }
+.points-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.points-search input {
+  flex: 1;
+  min-width: 0;
+}
+.points-search button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.points-search button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 .points-list { display: flex; flex-direction: column; gap: 14px; }
 .point-item {
   border: 1px solid var(--border);

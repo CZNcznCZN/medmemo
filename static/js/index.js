@@ -8,7 +8,8 @@ const REL_TYPE_LABELS = {
 
 let cardEditorCount = 0;
 let currentTag = "";        // 当前筛选的科目
-let allPointsCache = null;   // 缓存所有知识点（科目筛选用）
+let currentPointsCache = [];  // 当前列表知识点（搜索用）
+let currentCardsByPoint = {}; // 当前列表卡片缓存（搜索用）
 let relModalPointId = null; // 当前打开关联弹窗的知识点 id
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -19,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAdvancedToggle();
   bindRelationModal();
   bindBackupImport();
+  bindPointSearch();
   addCardRow("forward");
 });
 
@@ -54,6 +56,8 @@ async function loadTags() {
     box.querySelectorAll(".tag-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         currentTag = btn.dataset.tag;
+        const searchInput = document.getElementById("pointSearch");
+        if (searchInput) searchInput.value = "";
         box.querySelectorAll(".tag-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         loadPoints();
@@ -263,11 +267,26 @@ function bindAddForm() {
 
 /* ---------------- 知识点列表 ---------------- */
 
+function bindPointSearch() {
+  const input = document.getElementById("pointSearch");
+  const clearBtn = document.getElementById("clearPointSearch");
+  if (!input || !clearBtn) return;
+  input.addEventListener("input", () => renderPointsList());
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    input.focus();
+    renderPointsList();
+  });
+}
+
 async function loadPoints() {
   const box = document.getElementById("pointsList");
   try {
     const points = await API.listPoints(currentTag);
     if (points.length === 0) {
+      currentPointsCache = [];
+      currentCardsByPoint = {};
+      updatePointsCount(0, 0);
       box.innerHTML = `<div class="muted">${currentTag ? `「${esc(currentTag)}」分类下暂无知识点。` : '还没有知识点。去「AI 导入」粘贴教材让 AI 帮你拆卡，或在上方手动添加。'}</div>`;
       return;
     }
@@ -276,23 +295,58 @@ async function loadPoints() {
     cards.forEach(c => {
       (cardsByPoint[c.point_id] = cardsByPoint[c.point_id] || []).push(c);
     });
-    box.innerHTML = points.map(p => renderPoint(p, cardsByPoint[p.id] || [])).join("");
-    // 绑定按钮事件
-    box.querySelectorAll(".del-point").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("删除该知识点及其所有卡片和关联？")) return;
-        try {
-          await API.deletePoint(parseInt(btn.dataset.id));
-          loadStats(); loadTags(); loadPoints();
-        } catch (e) { alert("删除失败：" + e.message); }
-      });
-    });
-    box.querySelectorAll(".rel-point").forEach(btn => {
-      btn.addEventListener("click", () => openRelationModal(parseInt(btn.dataset.id), btn.dataset.title));
-    });
+    currentPointsCache = points;
+    currentCardsByPoint = cardsByPoint;
+    renderPointsList();
   } catch (e) {
     box.innerHTML = `<div class="muted" style="color:var(--danger);">加载失败：${esc(e.message)}<br>请确认服务器已启动（python server.py）</div>`;
   }
+}
+
+function updatePointsCount(visible, total) {
+  const el = document.getElementById("pointsCount");
+  if (!el) return;
+  el.textContent = total ? (visible === total ? `${total} 个知识点` : `${visible} / ${total} 个知识点`) : "";
+}
+
+function pointMatchesSearch(point, cards, query) {
+  if (!query) return true;
+  const haystack = [
+    point.title, point.tag, point.mechanism, point.clinical, point.mnemonic,
+    point.diagnosis, point.treatment, point.differential, point.etiology, point.prevention,
+    ...cards.flatMap(c => [c.question, c.answer, TYPE_LABELS[c.type] || c.type]),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(query);
+}
+
+function renderPointsList() {
+  const box = document.getElementById("pointsList");
+  const query = (document.getElementById("pointSearch")?.value || "").trim().toLowerCase();
+  const filtered = currentPointsCache.filter(p => pointMatchesSearch(p, currentCardsByPoint[p.id] || [], query));
+  updatePointsCount(filtered.length, currentPointsCache.length);
+
+  if (filtered.length === 0) {
+    box.innerHTML = `<div class="muted">${query ? `没有找到包含「${esc(query)}」的知识点。` : "暂无知识点。"}</div>`;
+    return;
+  }
+
+  box.innerHTML = filtered.map(p => renderPoint(p, currentCardsByPoint[p.id] || [])).join("");
+  bindPointListActions(box);
+}
+
+function bindPointListActions(box) {
+  box.querySelectorAll(".del-point").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("删除该知识点及其所有卡片和关联？")) return;
+      try {
+        await API.deletePoint(parseInt(btn.dataset.id));
+        loadStats(); loadTags(); loadPoints();
+      } catch (e) { alert("删除失败：" + e.message); }
+    });
+  });
+  box.querySelectorAll(".rel-point").forEach(btn => {
+    btn.addEventListener("click", () => openRelationModal(parseInt(btn.dataset.id), btn.dataset.title));
+  });
 }
 
 function renderPoint(p, cards) {
