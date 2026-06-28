@@ -120,13 +120,13 @@ function bindBackupImport() {
     const file = input.files && input.files[0];
     input.value = "";
     if (!file) return;
-    if (!confirm("恢复备份会清空当前全部知识点、卡片、复习记录和知识网络，再替换为备份文件内容。继续？")) {
-      return;
-    }
     try {
+      const backup = JSON.parse(await file.text());
+      if (!confirm(buildBackupRestoreMessage(file, backup))) {
+        return;
+      }
       btn.disabled = true;
       btn.textContent = "恢复中...";
-      const backup = JSON.parse(await file.text());
       const result = await API.importBackup(backup);
       const s = result.stats || {};
       const safety = result.safety_backup ? `\n\n恢复前的当前数据已自动保存到：\n${result.safety_backup}` : "";
@@ -142,6 +142,44 @@ function bindBackupImport() {
       btn.textContent = "↥ 恢复备份";
     }
   });
+}
+
+function backupCount(backup, key) {
+  return Array.isArray(backup?.[key]) ? backup[key].length : 0;
+}
+
+function buildBackupRestoreMessage(file, backup) {
+  const exportedAt = backup?.exported_at || "未知";
+  const version = backup?.version || "未知";
+  const points = backupCount(backup, "points");
+  const cards = backupCount(backup, "cards");
+  const reviews = backupCount(backup, "reviews");
+  const relations = backupCount(backup, "relations");
+  const nodes = backupCount(backup, "nodes");
+  const comparisons = backupCount(backup, "comparison_dims");
+  const customEdges = backupCount(backup, "custom_edges");
+  const warnings = [];
+  if (!Array.isArray(backup?.points) || !Array.isArray(backup?.cards)) {
+    warnings.push("这个文件缺少 points/cards 字段，可能不是 MedMemo 完整备份。");
+  }
+  if (points === 0 && cards === 0) {
+    warnings.push("备份里没有知识点和卡片。");
+  }
+  const warningText = warnings.length ? `\n\n注意：\n${warnings.map(w => `- ${w}`).join("\n")}` : "";
+  return (
+    `准备恢复备份：${file.name}\n\n` +
+    `导出时间：${exportedAt}\n` +
+    `备份版本：${version}\n` +
+    `知识点：${points}\n` +
+    `卡片：${cards}\n` +
+    `复习记录：${reviews}\n` +
+    `知识关联：${relations}\n` +
+    `知识节点：${nodes}\n` +
+    `对比维度：${comparisons}\n` +
+    `手动连线：${customEdges}` +
+    warningText +
+    `\n\n恢复会清空当前全部学习数据，并替换为以上备份内容。继续？`
+  );
 }
 
 /* ---------------- 统计 ---------------- */
