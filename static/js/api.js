@@ -93,6 +93,7 @@ const API = {
   // 学科管理
   clearTag: (tag) => API._req("DELETE", `/api/tags?tag=${encodeURIComponent(tag)}`),
   mergeTag: (from, to) => API._req("PUT", "/api/tags", { from, to }),
+  importBackup: (backup) => API._req("POST", "/api/backup/import", backup, null),
 };
 
 /* 卡片类型中文映射 */

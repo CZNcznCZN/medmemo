@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindAddForm();
   bindAdvancedToggle();
   bindRelationModal();
+  bindBackupImport();
   addCardRow("forward");
 });
 
@@ -100,6 +101,41 @@ async function manageTag(tag, count) {
       loadStats(); loadTags(); loadPoints();
     } catch (e) { alert("合并失败：" + e.message); }
   }
+}
+
+/* ---------------- 备份恢复 ---------------- */
+
+function bindBackupImport() {
+  const btn = document.getElementById("importBackupBtn");
+  const input = document.getElementById("backupFileInput");
+  if (!btn || !input) return;
+
+  btn.addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    input.value = "";
+    if (!file) return;
+    if (!confirm("恢复备份会清空当前全部知识点、卡片、复习记录和知识网络，再替换为备份文件内容。继续？")) {
+      return;
+    }
+    try {
+      btn.disabled = true;
+      btn.textContent = "恢复中...";
+      const backup = JSON.parse(await file.text());
+      const result = await API.importBackup(backup);
+      const s = result.stats || {};
+      alert(`恢复完成：${s.points || 0} 个知识点，${s.cards || 0} 张卡片，${s.reviews || 0} 条复习记录。`);
+      currentTag = "";
+      await loadTags();
+      await loadStats();
+      await loadPoints();
+    } catch (e) {
+      alert("恢复失败：" + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "↥ 恢复备份";
+    }
+  });
 }
 
 /* ---------------- 统计 ---------------- */

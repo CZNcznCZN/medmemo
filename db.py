@@ -906,39 +906,107 @@ def list_points_with_due(tag=None):
     return [dict(r) for r in rows]
 
 
-# -------------------- 完整备份导出 --------------------
+# -------------------- 完整备份导入/导出 --------------------
+
+_BACKUP_TABLES = {
+    "points": "knowledge_points",
+    "cards": "cards",
+    "relations": "knowledge_relations",
+    "nodes": "knowledge_nodes",
+    "reviews": "reviews",
+    "comparison_dims": "comparison_dims",
+    "custom_edges": "custom_edges",
+}
+
+_BACKUP_DELETE_ORDER = [
+    "custom_edges",
+    "comparison_dims",
+    "reviews",
+    "knowledge_relations",
+    "knowledge_nodes",
+    "cards",
+    "knowledge_points",
+]
+
+_BACKUP_INSERT_ORDER = [
+    "points",
+    "cards",
+    "nodes",
+    "relations",
+    "reviews",
+    "comparison_dims",
+    "custom_edges",
+]
+
+
+def _table_columns(c, table):
+    return {row["name"] for row in c.execute(f"PRAGMA table_info({table})")}
+
+
+def _insert_backup_rows(c, table, rows):
+    if not rows:
+        return 0
+    columns = _table_columns(c, table)
+    inserted = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError(f"{table} 备份记录格式不正确")
+        keys = [k for k in row.keys() if k in columns]
+        if not keys:
+            continue
+        placeholders = ", ".join(["?"] * len(keys))
+        col_names = ", ".join(keys)
+        c.execute(
+            f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
+            [row[k] for k in keys],
+        )
+        inserted += 1
+    return inserted
 
 def export_all():
     """导出全部数据为自包含 dict（完整备份，可灾备恢复）。
 
-    包含 5 张表的全量数据：知识点、卡片（含 SM-2 状态）、关联、
-    层级节点、复习历史。带版本号和导出时间，便于将来做导入恢复。
+    包含核心学习数据、知识网络、对比网络和手动连线。
     """
     with _conn() as c:
-        points = [dict(r) for r in c.execute(
-            "SELECT * FROM knowledge_points ORDER BY id"
-        ).fetchall()]
-        cards = [dict(r) for r in c.execute(
-            "SELECT * FROM cards ORDER BY id"
-        ).fetchall()]
-        relations = [dict(r) for r in c.execute(
-            "SELECT * FROM knowledge_relations ORDER BY id"
-        ).fetchall()]
-        nodes = [dict(r) for r in c.execute(
-            "SELECT * FROM knowledge_nodes ORDER BY id"
-        ).fetchall()]
-        reviews = [dict(r) for r in c.execute(
-            "SELECT * FROM reviews ORDER BY id"
-        ).fetchall()]
+        exported = {}
+        for key, table in _BACKUP_TABLES.items():
+            exported[key] = [
+                dict(r) for r in c.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+            ]
     return {
-        "version": 1,
+        "version": 2,
         "exported_at": _now(),
-        "points": points,
-        "cards": cards,
-        "relations": relations,
-        "nodes": nodes,
-        "reviews": reviews,
+        **exported,
     }
+
+
+def import_backup(data):
+    """用备份 JSON 恢复完整学习数据。
+
+    这是破坏性替换操作：先清空当前学习数据，再按外键顺序恢复备份。
+    整个过程在一个 transaction 内完成，失败会回滚到恢复前状态。
+    """
+    if not isinstance(data, dict):
+        raise ValueError("备份文件不是合法的 JSON 对象")
+    if "points" not in data or "cards" not in data:
+        raise ValueError("备份文件缺少 points/cards，无法恢复")
+    for key in _BACKUP_INSERT_ORDER:
+        rows = data.get(key, [])
+        if rows is None:
+            data[key] = []
+        elif not isinstance(rows, list):
+            raise ValueError(f"备份字段 {key} 格式不正确")
+
+    stats = {}
+    with _conn() as c:
+        c.execute("PRAGMA defer_foreign_keys = ON")
+        for table in _BACKUP_DELETE_ORDER:
+            c.execute(f"DELETE FROM {table}")
+        for key in _BACKUP_INSERT_ORDER:
+            table = _BACKUP_TABLES[key]
+            stats[key] = _insert_backup_rows(c, table, data.get(key, []))
+    return stats
 
 
 # -------------------- 对比维度（结构化对比存储）--------------------

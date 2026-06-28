@@ -129,13 +129,22 @@ body {
   justify-content: center;
   background: var(--primary);
 }
-.stat-cta a {
+.stat-cta a,
+.stat-cta button {
   color: #fff;
   text-decoration: none;
   font-weight: 600;
   font-size: 16px;
 }
+.stat-cta button {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
 .stat-cta:hover { background: var(--primary-dark); }
+.stat-cta-secondary { background: #475569; }
+.stat-cta-secondary:hover { background: #334155; }
 
 /* ---------------- 表单 ---------------- */
 

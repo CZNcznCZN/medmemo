@@ -34,7 +34,7 @@ import db
 from db import (
     init_db, stats, list_points, get_point, create_point, update_point,
     delete_point, list_cards, get_due_cards, review_card, create_card,
-    delete_card, update_card, seed_if_empty, export_all, list_point_titles,
+    delete_card, update_card, seed_if_empty, export_all, import_backup, list_point_titles,
     get_tags, get_relations, create_relation, delete_relation,
     batch_create_relations, get_all_relations, list_points_with_due,
     get_root_nodes, get_children, batch_create_nodes, get_cards_by_point,
@@ -43,7 +43,6 @@ from db import (
     create_custom_edge, get_custom_edges, delete_custom_edge,
     delete_node, update_node, create_node,
     delete_points_by_tag, retag_points,
-    backfill_comparisons,
     get_wrong_cards, get_review_stats,
     import_ai_result,
 )
@@ -256,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_attach_small(body)
             if path == "/api/import/batch":
                 return self._handle_import_batch(body)
+            if path == "/api/backup/import":
+                return self._handle_backup_import(body)
             if path == "/api/relations":
                 return self._handle_batch_relations(body)
             if path == "/api/nodes":
@@ -379,6 +380,11 @@ class Handler(BaseHTTPRequestHandler):
             tag=tag,
         )
         self._send_json({"ok": True, **stats}, 201)
+
+    def _handle_backup_import(self, body):
+        """从完整备份 JSON 恢复数据。当前数据会被备份内容替换。"""
+        stats = import_backup(body)
+        self._send_json({"ok": True, "stats": stats}, 201)
 
     def _handle_batch_relations(self, body):
         """批量创建知识点关联。"""
