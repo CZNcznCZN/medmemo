@@ -61,6 +61,24 @@
     <div id="studyArea" style="display:none;">
       <!-- 进度条 -->
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="study-metrics" id="studyMetrics" style="display:none;">
+        <div class="study-metric">
+          <strong id="metricRemaining">0</strong>
+          <span>剩余</span>
+        </div>
+        <div class="study-metric">
+          <strong id="metricProgress">0%</strong>
+          <span>完成度</span>
+        </div>
+        <div class="study-metric">
+          <strong id="metricAccuracy">-</strong>
+          <span>本轮正确率</span>
+        </div>
+        <div class="study-metric">
+          <strong id="metricEta">-</strong>
+          <span>预计剩余</span>
+        </div>
+      </div>
       <div class="study-feedback" id="studyFeedback" style="display:none;">
         <span id="studyFeedbackText"></span>
         <button type="button" id="undoReviewBtn">撤销上次评分</button>

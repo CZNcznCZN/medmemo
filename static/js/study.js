@@ -7,6 +7,9 @@ let selectedTag = "";
 let selectedMode = "subject";      // subject(按科目) / point(按知识点)
 let selectedPointIds = [];         // 按知识点模式选中的知识点 id 数组（多选）
 let lastReviewUndo = null;
+let sessionStartedAt = null;
+let sessionRated = 0;
+let sessionCorrect = 0;
 
 const REL_TYPE_LABELS = {
   cause: "因果", compare: "对比", upstream: "上游", downstream: "下游", related: "相关"
@@ -181,12 +184,16 @@ async function loadQueue() {
       queue = await API.getDue(tag, pids);
     }
     currentIdx = 0;
+    sessionStartedAt = Date.now();
+    sessionRated = 0;
+    sessionCorrect = 0;
     if (queue.length === 0) {
       document.getElementById("cardArea").style.display = "none";
       document.getElementById("emptyState").style.display = "";
       setEmptyStateText();
       document.getElementById("progressText").textContent = "0 / 0";
       document.getElementById("progressFill").style.width = "100%";
+      updateSessionMetrics();
       return;
     }
     document.getElementById("cardArea").style.display = "";
@@ -293,6 +300,40 @@ function updateProgress() {
   document.getElementById("progressText").textContent = `${done} / ${total}`;
   const pct = total === 0 ? 0 : (done / total) * 100;
   document.getElementById("progressFill").style.width = pct + "%";
+  updateSessionMetrics();
+}
+
+function formatEta(msPerCard, remaining) {
+  if (!Number.isFinite(msPerCard) || msPerCard <= 0 || remaining <= 0) return "-";
+  const minutes = Math.ceil((msPerCard * remaining) / 60000);
+  if (minutes <= 1) return "1 分钟内";
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}小时${rest}分` : `${hours}小时`;
+}
+
+function updateSessionMetrics() {
+  const metrics = document.getElementById("studyMetrics");
+  if (!metrics) return;
+
+  const total = queue.length;
+  const done = Math.min(currentIdx, total);
+  const remaining = Math.max(total - done, 0);
+  const progress = total === 0 ? 0 : Math.round((done / total) * 100);
+  const accuracy = sessionRated === 0 ? "-" : `${Math.round((sessionCorrect / sessionRated) * 100)}%`;
+  const elapsed = sessionStartedAt ? Date.now() - sessionStartedAt : 0;
+  const eta = remaining === 0 && total > 0
+    ? "完成"
+    : sessionRated === 0
+      ? "-"
+      : formatEta(elapsed / sessionRated, remaining);
+
+  document.getElementById("metricRemaining").textContent = String(remaining);
+  document.getElementById("metricProgress").textContent = `${progress}%`;
+  document.getElementById("metricAccuracy").textContent = accuracy;
+  document.getElementById("metricEta").textContent = eta;
+  metrics.style.display = total > 0 ? "grid" : "none";
 }
 
 /* ---------------- 键盘快捷键 ---------------- */
@@ -317,9 +358,14 @@ async function rate(rating) {
   const before = {
     queue: queue.map(item => ({ ...item })),
     currentIdx,
+    sessionStartedAt,
+    sessionRated,
+    sessionCorrect,
   };
   try {
     const review = await API.reviewCard(card.id, rating);
+    sessionRated++;
+    if (rating === "good" || rating === "easy") sessionCorrect++;
     if (selectedMode === "wrong" && (rating === "again" || rating === "hard")) {
       queue.push({
         ...card,
@@ -343,6 +389,7 @@ async function rate(rating) {
       setEmptyStateText();
       document.getElementById("progressText").textContent = `${queue.length} / ${queue.length}`;
       document.getElementById("progressFill").style.width = "100%";
+      updateSessionMetrics();
     } else {
       showCard();
     }
@@ -362,6 +409,9 @@ async function undoLastReview() {
     await API.undoReview(undo.reviewId);
     queue = undo.queue;
     currentIdx = undo.currentIdx;
+    sessionStartedAt = undo.sessionStartedAt;
+    sessionRated = undo.sessionRated;
+    sessionCorrect = undo.sessionCorrect;
     document.getElementById("emptyState").style.display = "none";
     document.getElementById("cardArea").style.display = "";
     showCard();

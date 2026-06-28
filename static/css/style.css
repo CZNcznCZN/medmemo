@@ -380,6 +380,35 @@ textarea { resize: vertical; }
   transition: width 0.3s;
 }
 
+.study-metrics {
+  max-width: 760px;
+  margin: 10px auto 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.study-metric {
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.study-metric strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.25;
+  color: var(--primary);
+}
+.study-metric span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .card-area {
   max-width: 760px;
   margin: 24px auto 0;
@@ -1278,6 +1307,7 @@ textarea { resize: vertical; }
   .stats-bar { grid-template-columns: 1fr 1fr; }
   .form-grid, .card-edit-row { grid-template-columns: 1fr; }
   .ai-edit-grid, .ai-edit-card { grid-template-columns: 1fr; }
+  .study-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rating-buttons { grid-template-columns: repeat(2, 1fr); }
   .flashcard { height: 280px; }
   .card-question { font-size: 18px; }
