@@ -1213,6 +1213,32 @@ def write_backup_snapshot(prefix="medmemo-backup"):
     return path
 
 
+def auto_backup_if_needed(keep=7):
+    """每天首次启动时自动备份一次，并保留最近 keep 份自动备份。"""
+    backup_dir = os.path.join(USER_DATA_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    today = date.today().strftime("%Y%m%d")
+    existing_today = [
+        name for name in os.listdir(backup_dir)
+        if name.startswith(f"auto-{today}-") and name.endswith(".json")
+    ]
+    if existing_today:
+        return {"created": False, "path": os.path.join(backup_dir, existing_today[-1])}
+
+    path = write_backup_snapshot(f"auto-{today}")
+    auto_files = sorted(
+        os.path.join(backup_dir, name)
+        for name in os.listdir(backup_dir)
+        if name.startswith("auto-") and name.endswith(".json")
+    )
+    for old_path in auto_files[:-keep]:
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    return {"created": True, "path": path}
+
+
 def import_backup(data):
     """用备份 JSON 恢复完整学习数据。
 

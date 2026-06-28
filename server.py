@@ -46,6 +46,7 @@ from db import (
     get_wrong_cards, get_review_stats,
     import_ai_result,
     write_backup_snapshot,
+    auto_backup_if_needed,
 )
 from ai import generate_cards, attach_small_points
 from config import load_config, has_api_key
@@ -554,6 +555,10 @@ def main():
     # 回填：把旧版对比知识点的结构化维度从 differential 解析出来，让它们进对比网络
     backfill_comparisons()
     cfg = load_config()
+    try:
+        auto_backup = auto_backup_if_needed(int(cfg.get("auto_backup_keep", 7)))
+    except Exception as e:
+        auto_backup = {"created": False, "error": str(e)}
     host = cfg.get("host", "localhost")
     port = _find_free_port(host, int(cfg.get("port", 8000)))
     try:
@@ -565,6 +570,10 @@ def main():
     url = f"http://{host}:{port}"
     print(f"MedMemo: {url}")
     print(f"  DB: {db.DB_PATH}")
+    if auto_backup.get("created"):
+        print(f"  Backup: {auto_backup.get('path')}")
+    elif auto_backup.get("error"):
+        print(f"  Backup: skipped ({auto_backup.get('error')})")
     print(f"  AI: {'ON (' + cfg.get('deepseek_model') + ')' if has_api_key() else 'OFF (edit config.json -> deepseek_api_key)'}")
     print("  Ctrl+C to stop")
     print("  Browser will open automatically...")

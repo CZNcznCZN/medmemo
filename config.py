@@ -16,6 +16,7 @@ DEFAULTS = {
     "host": "localhost",
     "port": 8000,
     "new_cards_per_day": 0,
+    "auto_backup_keep": 7,
 }
 
 
