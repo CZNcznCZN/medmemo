@@ -531,6 +531,37 @@ textarea { resize: vertical; }
   width: 0%;
   transition: width 0.3s;
 }
+.study-controls {
+  max-width: 760px;
+  margin: 10px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.auto-next-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.auto-next-toggle input {
+  accent-color: var(--primary);
+}
+#nextCardBtn {
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  padding: 7px 12px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+#nextCardBtn:hover {
+  background: var(--primary-dark);
+}
 
 .study-metrics {
   max-width: 760px;
@@ -1532,6 +1563,11 @@ textarea { resize: vertical; }
   .form-grid, .card-edit-row { grid-template-columns: 1fr; }
   .ai-edit-grid, .ai-edit-card { grid-template-columns: 1fr; }
   .study-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .study-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  #nextCardBtn { width: 100%; }
   .summary-grid { grid-template-columns: 1fr; }
   .rating-buttons { grid-template-columns: repeat(2, 1fr); }
   .flashcard { height: 280px; }

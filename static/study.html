@@ -61,6 +61,14 @@
     <div id="studyArea" style="display:none;">
       <!-- 进度条 -->
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="study-controls" id="studyControls">
+        <span id="todayProgressText">本轮进度：0 / 0</span>
+        <label class="auto-next-toggle">
+          <input type="checkbox" id="autoNextToggle" checked>
+          自动下一题
+        </label>
+        <button type="button" id="nextCardBtn" style="display:none;">下一题</button>
+      </div>
       <div class="study-metrics" id="studyMetrics" style="display:none;">
         <div class="study-metric">
           <strong id="metricRemaining">0</strong>
@@ -81,7 +89,7 @@
       </div>
       <div class="study-feedback" id="studyFeedback" style="display:none;">
         <span id="studyFeedbackText"></span>
-        <button type="button" id="undoReviewBtn">撤销上次评分</button>
+        <button type="button" id="undoReviewBtn" title="U">撤销上次评分</button>
       </div>
 
       <!-- 空状态 -->

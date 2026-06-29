@@ -13,6 +13,8 @@ let sessionRated = 0;
 let sessionCorrect = 0;
 let sessionReviews = [];
 let includeAllSelectedPoints = false;
+let pendingNextCard = false;
+let ratingBusy = false;
 
 const REL_TYPE_LABELS = {
   cause: "因果", compare: "对比", upstream: "上游", downstream: "下游", related: "相关"
@@ -46,6 +48,7 @@ function bindStudyEvents() {
   // 开始复习
   document.getElementById("startStudyBtn").addEventListener("click", startStudy);
   document.getElementById("undoReviewBtn").addEventListener("click", undoLastReview);
+  document.getElementById("nextCardBtn").addEventListener("click", advanceAfterRating);
 }
 
 /* ---------------- 按科目：加载科目按钮 ---------------- */
@@ -219,6 +222,7 @@ async function startStudy() {
   document.getElementById("tagSelector").style.display = "none";
   document.getElementById("studyArea").style.display = "";
   hideReviewFeedback();
+  hideNextCardButton();
   await loadQueue();
   document.querySelectorAll(".rating-btn").forEach(btn => {
     btn.addEventListener("click", () => rate(btn.dataset.rating));
@@ -241,6 +245,8 @@ async function loadQueue() {
       queue = await API.getDue(tag, pids, { includeAll: selectedMode === "point" && includeAllSelectedPoints });
     }
     currentIdx = 0;
+    pendingNextCard = false;
+    ratingBusy = false;
     sessionStartedAt = Date.now();
     sessionRated = 0;
     sessionCorrect = 0;
@@ -251,6 +257,7 @@ async function loadQueue() {
       document.getElementById("emptyState").style.display = "";
       setEmptyStateText();
       document.getElementById("progressText").textContent = "0 / 0";
+      updateStudyProgressText(0, 0);
       document.getElementById("progressFill").style.width = "100%";
       updateSessionMetrics();
       return;
@@ -269,6 +276,9 @@ async function loadQueue() {
 function showCard() {
   const card = queue[currentIdx];
   flipped = false;
+  pendingNextCard = false;
+  ratingBusy = false;
+  hideNextCardButton();
   const fc = document.getElementById("flashcard");
   fc.classList.remove("flipped");
 
@@ -357,9 +367,17 @@ function updateProgress() {
   const total = queue.length;
   const done = currentIdx;
   document.getElementById("progressText").textContent = `${done} / ${total}`;
+  updateStudyProgressText(done, total);
   const pct = total === 0 ? 0 : (done / total) * 100;
   document.getElementById("progressFill").style.width = pct + "%";
   updateSessionMetrics();
+}
+
+function updateStudyProgressText(done, total) {
+  const todayText = document.getElementById("todayProgressText");
+  if (!todayText) return;
+  const label = selectedMode === "subject" ? "今日进度" : "本轮进度";
+  todayText.textContent = `${label}：${done} / ${total}`;
 }
 
 function formatEta(msPerCard, remaining) {
@@ -488,6 +506,16 @@ function showCompletionSummary() {
 document.addEventListener("keydown", (e) => {
   // 科目选择界面不响应键盘
   if (document.getElementById("tagSelector").style.display !== "none") return;
+  if (e.key.toLowerCase() === "u") {
+    e.preventDefault();
+    undoLastReview();
+    return;
+  }
+  if (pendingNextCard && (e.key === "Enter" || e.code === "Space")) {
+    e.preventDefault();
+    advanceAfterRating();
+    return;
+  }
   if (queue.length === 0 || currentIdx >= queue.length) return;
   if (e.code === "Space") {
     e.preventDefault();
@@ -501,6 +529,8 @@ document.addEventListener("keydown", (e) => {
 /* ---------------- 评分 ---------------- */
 
 async function rate(rating) {
+  if (ratingBusy || pendingNextCard) return;
+  ratingBusy = true;
   const card = queue[currentIdx];
   const before = {
     queue: queue.map(item => ({ ...item })),
@@ -539,19 +569,48 @@ async function rate(rating) {
       reviewId: review.review_id,
       ...before,
     });
-    if (currentIdx >= queue.length) {
-      document.getElementById("cardArea").style.display = "none";
-      document.getElementById("emptyState").style.display = "";
-      setEmptyStateText();
-      document.getElementById("progressText").textContent = `${queue.length} / ${queue.length}`;
-      document.getElementById("progressFill").style.width = "100%";
-      updateSessionMetrics();
-      showCompletionSummary();
+    if (shouldAutoNext()) {
+      advanceAfterRating();
     } else {
-      showCard();
+      pendingNextCard = true;
+      showNextCardButton();
+      updateProgress();
     }
   } catch (e) {
     alert("评分失败：" + e.message);
+    ratingBusy = false;
+  }
+}
+
+function shouldAutoNext() {
+  return document.getElementById("autoNextToggle")?.checked !== false;
+}
+
+function showNextCardButton() {
+  const btn = document.getElementById("nextCardBtn");
+  if (btn) btn.style.display = "";
+}
+
+function hideNextCardButton() {
+  const btn = document.getElementById("nextCardBtn");
+  if (btn) btn.style.display = "none";
+}
+
+function advanceAfterRating() {
+  pendingNextCard = false;
+  ratingBusy = false;
+  hideNextCardButton();
+  if (currentIdx >= queue.length) {
+    document.getElementById("cardArea").style.display = "none";
+    document.getElementById("emptyState").style.display = "";
+    setEmptyStateText();
+    document.getElementById("progressText").textContent = `${queue.length} / ${queue.length}`;
+    updateStudyProgressText(queue.length, queue.length);
+    document.getElementById("progressFill").style.width = "100%";
+    updateSessionMetrics();
+    showCompletionSummary();
+  } else {
+    showCard();
   }
 }
 
@@ -570,6 +629,9 @@ async function undoLastReview() {
     sessionRated = undo.sessionRated;
     sessionCorrect = undo.sessionCorrect;
     sessionReviews = undo.sessionReviews || [];
+    pendingNextCard = false;
+    ratingBusy = false;
+    hideNextCardButton();
     document.getElementById("emptyState").style.display = "none";
     document.getElementById("cardArea").style.display = "";
     hideCompletionSummary();
