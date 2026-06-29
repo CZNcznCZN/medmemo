@@ -11,15 +11,16 @@ let sessionStartedAt = null;
 let sessionRated = 0;
 let sessionCorrect = 0;
 let sessionReviews = [];
+let includeAllSelectedPoints = false;
 
 const REL_TYPE_LABELS = {
   cause: "因果", compare: "对比", upstream: "上游", downstream: "下游", related: "相关"
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadStudyTags();
-  loadStudyPoints();
+document.addEventListener("DOMContentLoaded", async () => {
   bindStudyEvents();
+  await Promise.all([loadStudyTags(), loadStudyPoints()]);
+  applyStudyUrlParams();
 });
 
 /* ---------------- 模式切换 ---------------- */
@@ -31,6 +32,7 @@ function bindStudyEvents() {
       selectedMode = btn.dataset.mode;
       document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
+      if (selectedMode !== "point") includeAllSelectedPoints = false;
       // subject/point/wrong 三模式：wrong 时两个面板都隐藏
       document.getElementById("subjectPanel").style.display = selectedMode === "subject" ? "" : "none";
       document.getElementById("pointPanel").style.display = selectedMode === "point" ? "" : "none";
@@ -112,6 +114,7 @@ async function loadStudyPoints() {
     // checkbox 变化 → 更新选中数组 + 按钮状态
     list.querySelectorAll(".ps-check").forEach(cb => {
       cb.addEventListener("change", () => {
+        includeAllSelectedPoints = false;
         const id = parseInt(cb.value);
         if (cb.checked) {
           if (!selectedPointIds.includes(id)) selectedPointIds.push(id);
@@ -131,7 +134,13 @@ function updateStartBtn() {
   const btn = document.getElementById("startStudyBtn");
   if (selectedMode === "point") {
     const n = selectedPointIds.length;
-    btn.textContent = n > 0 ? `开始复习（已选 ${n} 个知识点）` : "开始复习（请勾选知识点）";
+    if (n > 0 && includeAllSelectedPoints) {
+      btn.textContent = `定向复习（${n} 个知识点全部卡片）`;
+    } else if (n > 0) {
+      btn.textContent = `开始复习（已选 ${n} 个知识点）`;
+    } else {
+      btn.textContent = "开始复习（请勾选知识点）";
+    }
     btn.disabled = n === 0;
   } else if (selectedMode === "wrong") {
     btn.textContent = "开始错题重练";
@@ -139,6 +148,44 @@ function updateStartBtn() {
   } else {
     btn.textContent = "开始复习";
     btn.disabled = false;
+  }
+}
+
+function setStudyMode(mode) {
+  selectedMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+  document.getElementById("subjectPanel").style.display = mode === "subject" ? "" : "none";
+  document.getElementById("pointPanel").style.display = mode === "point" ? "" : "none";
+  document.getElementById("wrongModeHint").style.display = mode === "wrong" ? "" : "none";
+  updateStartBtn();
+}
+
+function applyStudyUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const pointIds = params.getAll("point_id")
+    .flatMap(value => String(value).split(","))
+    .map(value => parseInt(value, 10))
+    .filter(Number.isFinite);
+  if (!pointIds.length) return;
+
+  selectedPointIds = [...new Set(pointIds)];
+  includeAllSelectedPoints = params.get("all") === "1" || params.get("include_all") === "1";
+  setStudyMode("point");
+
+  document.querySelectorAll("#pointList .ps-check").forEach(cb => {
+    const id = parseInt(cb.value, 10);
+    if (selectedPointIds.includes(id)) {
+      cb.disabled = false;
+      cb.checked = true;
+      cb.closest(".point-study-item")?.classList.remove("disabled");
+    }
+  });
+  updateStartBtn();
+
+  if (params.get("autostart") === "1") {
+    startStudy();
   }
 }
 
@@ -182,7 +229,7 @@ async function loadQueue() {
       // 按知识点模式：只复习选中的多个知识点；按科目模式：按科目筛选
       const pids = selectedMode === "point" ? selectedPointIds : null;
       const tag = selectedMode === "point" ? null : selectedTag;
-      queue = await API.getDue(tag, pids);
+      queue = await API.getDue(tag, pids, { includeAll: selectedMode === "point" && includeAllSelectedPoints });
     }
     currentIdx = 0;
     sessionStartedAt = Date.now();

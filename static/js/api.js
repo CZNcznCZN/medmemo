@@ -48,7 +48,7 @@ const API = {
 
   listCards: () => API._req("GET", "/api/cards").then(r => r.cards),
   createCard: (data) => API._req("POST", "/api/cards", data),
-  getDue: (tag, pointIds) => {
+  getDue: (tag, pointIds, options = {}) => {
     const params = [];
     if (tag) params.push("tag=" + encodeURIComponent(tag));
     if (Array.isArray(pointIds)) {
@@ -56,6 +56,7 @@ const API = {
     } else if (pointIds) {
       params.push("point_id=" + encodeURIComponent(pointIds));
     }
+    if (options.includeAll) params.push("include_all=1");
     return API._req("GET", `/api/cards/due${params.length ? "?" + params.join("&") : ""}`).then(r => r.cards);
   },
   reviewCard: (id, rating) => API._req("POST", `/api/cards/review/${id}`, { rating }),

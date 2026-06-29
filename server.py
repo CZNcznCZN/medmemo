@@ -173,14 +173,15 @@ class Handler(BaseHTTPRequestHandler):
                 qs = parse_qs(parsed.query)
                 pid_vals = qs.get("point_id", [])
                 pids = [int(v) for v in pid_vals if v.isdigit()]
+                include_all = _get_param(parsed, "include_all") in ("1", "true", "yes")
                 # 新卡每日上限（0 = 不限）。仅在「按科目」无具体知识点筛选时生效——
                 # 用户主动选了知识点复习时，说明要集中练，不应再截断新卡。
                 cfg = load_config()
                 new_card_limit = 0 if pids else int(cfg.get("new_cards_per_day", 0))
                 if len(pids) > 1:
-                    cards = get_due_cards(tag=tag, point_ids=pids)
+                    cards = get_due_cards(tag=tag, point_ids=pids, include_all=include_all)
                 elif len(pids) == 1:
-                    cards = get_due_cards(tag=tag, point_id=pids[0])
+                    cards = get_due_cards(tag=tag, point_id=pids[0], include_all=include_all)
                 else:
                     cards = get_due_cards(tag=tag, new_card_limit=new_card_limit)
                 return self._send_json({"cards": cards})

@@ -740,7 +740,7 @@ def get_cards_by_point(point_id):
     return [dict(r) for r in rows]
 
 
-def get_due_cards(tag=None, point_id=None, point_ids=None, new_card_limit=0):
+def get_due_cards(tag=None, point_id=None, point_ids=None, new_card_limit=0, include_all=False):
     """获取今天到期的卡片，可按科目和/或知识点筛选，按【交错练习】原则混排。
 
     - tag：按科目筛选
@@ -750,8 +750,11 @@ def get_due_cards(tag=None, point_id=None, point_ids=None, new_card_limit=0):
       新卡定义为 repetition == 0（从未正确复习过）。
       已学过的复习卡永不截断，遵循「复习优先」原则。
     """
-    where = ["c.due_date <= ?"]
-    params = [_today()]
+    where = []
+    params = []
+    if not include_all:
+        where.append("c.due_date <= ?")
+        params.append(_today())
     if tag:
         where.append("k.tag = ?")
         params.append(tag)
@@ -763,7 +766,7 @@ def get_due_cards(tag=None, point_id=None, point_ids=None, new_card_limit=0):
     elif point_id:
         where.append("c.point_id = ?")
         params.append(point_id)
-    where_clause = " AND ".join(where)
+    where_clause = " AND ".join(where) if where else "1 = 1"
 
     with _conn() as c:
         rows = c.execute(

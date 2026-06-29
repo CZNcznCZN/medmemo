@@ -1142,6 +1142,7 @@ function showNodeDetail(nodeId) {
   if (meta.level === 0) {
     html += `<button class="btn-mini" style="margin-top:8px;color:var(--danger);border-color:var(--danger);" onclick="hidePoint(${meta.point_id})">隐藏此知识点</button>`;
   }
+  html += `<a class="btn-mini" style="display:inline-block;margin-top:8px;margin-left:6px;text-decoration:none;" href="/study.html?point_id=${encodeURIComponent(meta.point_id)}&all=1&autostart=1">复习此知识点</a>`;
   // 卡片占位（异步加载）
   html += `<div id="ndCards" class="nd-cards"><div class="muted">加载卡片中...</div></div>`;
   detail.innerHTML = html;
