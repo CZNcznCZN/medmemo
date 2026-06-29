@@ -78,6 +78,20 @@
           <button class="btn-mini" id="nodeListToggleBtn" title="显示/隐藏左侧知识点列表">📋 知识点列表</button>
           <button class="btn-mini" id="attachSmallBtn" title="用 AI 把小知识点自动归属到同学科最相关的大知识点，融入大点子树">🔗 关联小知识点</button>
         </div>
+        <div class="net-ctrl-group">
+          <span class="net-ctrl-label">关系：</span>
+          <button class="net-rel-btn active" data-rel="cause">因果</button>
+          <button class="net-rel-btn active" data-rel="compare">对比</button>
+          <button class="net-rel-btn active" data-rel="upstream">上游</button>
+          <button class="net-rel-btn active" data-rel="downstream">下游</button>
+          <button class="net-rel-btn active" data-rel="related">相关</button>
+        </div>
+        <div class="net-ctrl-group">
+          <button class="btn-mini" id="neighborhoodBtn" title="只显示当前选中知识点及其关系邻居">只看邻域</button>
+          <button class="btn-mini" id="saveLayoutBtn" title="保存当前节点位置和缩放">保存布局</button>
+          <button class="btn-mini" id="resetLayoutBtn" title="清除当前视图布局并重新排布">重置布局</button>
+          <span class="muted" id="layoutStatus"></span>
+        </div>
         <div class="net-ctrl-group" id="netHiddenGroup" style="display:none;">
           <button class="btn-mini" id="showAllBtn" onclick="showAllPoints()">👁 显示全部知识点</button>
           <span class="muted" id="hiddenCount"></span>

@@ -315,6 +315,10 @@ textarea { resize: vertical; }
   cursor: pointer;
 }
 .btn-mini:hover { background: var(--primary); color: #fff; }
+.btn-mini.active {
+  background: var(--primary);
+  color: #fff;
+}
 
 /* ---------------- 卡片编辑器 ---------------- */
 
@@ -1227,6 +1231,24 @@ textarea { resize: vertical; }
 }
 .net-ctrl-group { display: flex; align-items: center; gap: 8px; }
 .net-ctrl-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.net-rel-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.net-rel-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.net-rel-btn.active {
+  background: #fee2e2;
+  border-color: var(--danger);
+  color: var(--danger);
+}
 .net-tag-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .net-tag-btn {
   background: var(--surface);

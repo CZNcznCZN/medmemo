@@ -66,10 +66,14 @@ let expandedNodes = new Set();
 let nodeMeta = {};
 let allRoots = [];           // 所有根节点缓存
 let allComparisons = [];     // 所有对比知识点缓存（对比视图用）
+let allRelations = [];       // 所有知识点关系缓存（用于关系线过滤和邻域）
 let smallAttachMap = {};     // 小知识点归属：{ bigPointId: [小根节点对象...] }
 let attachedSmallRootIds = new Set();  // 已归属小点的根节点 id（这些不作为独立根节点显示）
 let currentView = "main";    // 视图：main(知识点网络) / compare(对比网络)
 let currentTag = "";          // 当前学科筛选
+let activeRelationTypes = new Set(["cause", "compare", "upstream", "downstream", "related"]);
+let neighborhoodMode = false;
+let focusedNodeId = null;
 let hiddenPoints = new Set(   // 隐藏的知识点 id（持久化）
   JSON.parse(localStorage.getItem("net_hidden") || "[]")
 );
@@ -115,6 +119,15 @@ function savePositions() {
     viewPos: { x: Math.round(vp.x), y: Math.round(vp.y) },
   };
   try { localStorage.setItem(posStorageKey(), JSON.stringify(archive)); } catch { /* 满 */ }
+}
+
+function setLayoutStatus(text) {
+  const el = document.getElementById("layoutStatus");
+  if (!el) return;
+  el.textContent = text;
+  if (text) setTimeout(() => {
+    if (el.textContent === text) el.textContent = "";
+  }, 1800);
 }
 
 /* ---------------- 用户主动固定的节点（持久化）---------------- */
@@ -177,7 +190,7 @@ async function buildSmallAttachMap() {
   smallAttachMap = {};
   attachedSmallRootIds = new Set();
   try {
-    const rels = await API.getAllRelations();
+    const rels = allRelations.length ? allRelations : await API.getAllRelations();
     // belongs_to: from=大点 point_id, to=小点 point_id
     const belongs = (rels || []).filter(r => r.type === "belongs_to");
     // point_id → 根节点对象
@@ -203,6 +216,7 @@ async function initNetwork() {
   try {
     allRoots = await fetch("/api/nodes/roots").then(r => r.json()).then(d => d.nodes);
     allComparisons = await API.getComparisons();
+    allRelations = await API.getAllRelations();
     // 拉 belongs_to 关系：小知识点归属到大知识点 → 作为子节点融入
     await buildSmallAttachMap();
   } catch (e) {
@@ -217,6 +231,7 @@ async function initNetwork() {
   bindViewSwitch();
   bindBgControls();
   bindEditMode();
+  bindNetworkTools();
   applyBgColor(currentBg);
   buildTagButtons();
   updateHiddenUI();
@@ -252,6 +267,38 @@ function bindEditMode() {
   document.getElementById("deleteBtn").addEventListener("click", () => setEditSubMode("delete"));
   document.getElementById("attachSmallBtn").addEventListener("click", attachSmallPoints);
   document.getElementById("nodeListToggleBtn").addEventListener("click", toggleNodeListPanel);
+}
+
+function bindNetworkTools() {
+  document.querySelectorAll(".net-rel-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const rel = btn.dataset.rel;
+      if (activeRelationTypes.has(rel)) activeRelationTypes.delete(rel);
+      else activeRelationTypes.add(rel);
+      btn.classList.toggle("active", activeRelationTypes.has(rel));
+      refreshRelationLinks();
+      applyNeighborhoodVisibility();
+      savePositions();
+    });
+  });
+  document.getElementById("neighborhoodBtn").addEventListener("click", () => {
+    neighborhoodMode = !neighborhoodMode;
+    document.getElementById("neighborhoodBtn").classList.toggle("active", neighborhoodMode);
+    applyNeighborhoodVisibility();
+  });
+  document.getElementById("saveLayoutBtn").addEventListener("click", () => {
+    savePositions();
+    setLayoutStatus("已保存");
+  });
+  document.getElementById("resetLayoutBtn").addEventListener("click", () => {
+    if (!confirm("重置当前视图/学科的网络布局？节点位置、缩放和钉住状态会清除。")) return;
+    localStorage.removeItem(posStorageKey());
+    localStorage.removeItem(pinStorageKey());
+    pinnedNodes.clear();
+    expandedNodes.clear();
+    setLayoutStatus("已重置");
+    rebuildNetwork();
+  });
 }
 
 /* 左侧知识点列表面板：列出当前可见知识点，点击聚焦对应节点 */
@@ -706,6 +753,8 @@ function buildNetwork(roots) {
     }
     // 加载已存的自定义连线（编辑模式创建的）
     loadCustomEdgesIntoGraph();
+    refreshRelationLinks();
+    applyNeighborhoodVisibility();
   });
 
   setupInteractions();
@@ -943,6 +992,7 @@ function setupInteractions() {
     }
     if (params.nodes.length === 0) return;
     const nodeId = params.nodes[0];
+    focusedNodeId = nodeId;
     const meta = nodeMeta[nodeId];
     if (!meta) return;
     if (expandedNodes.has(nodeId)) {
@@ -951,6 +1001,7 @@ function setupInteractions() {
       await expandNode(nodeId);
     }
     showNodeDetail(nodeId);
+    applyNeighborhoodVisibility();
   });
 }
 
@@ -1045,6 +1096,7 @@ async function expandNode(nodeId) {
   expandedNodes.add(nodeId);
   nodesDataset.update({ id: nodeId, borderWidth: 5 });
   refreshRelationLinks();
+  applyNeighborhoodVisibility();
 }
 
 function collapseNode(nodeId) {
@@ -1072,6 +1124,7 @@ function collapseNode(nodeId) {
   const isRoot = nodeMeta[nodeId] && nodeMeta[nodeId].level === 0;
   nodesDataset.update({ id: nodeId, borderWidth: isRoot ? 3 : 2 });
   refreshRelationLinks();
+  applyNeighborhoodVisibility();
 }
 
 /* ---------------- 关联虚线：两端知识点都展开时连接 ---------------- */
@@ -1098,7 +1151,28 @@ function refreshRelationLinks() {
     }
   });
 
-  // 3. 遍历图上的所有子节点，有 linkTo 且目标根节点在图上 → 画虚线
+  // 3. 知识点之间的显式关系线，支持按关系类型过滤
+  (allRelations || []).forEach((r, idx) => {
+    if (!activeRelationTypes.has(r.type)) return;
+    if (r.type === "belongs_to") return;
+    const fromNode = rootByPoint[r.from_id];
+    const toNode = rootByPoint[r.to_id];
+    if (!fromNode || !toNode || fromNode === toNode) return;
+    edgesDataset.add({
+      id: `${REL_EDGE_PREFIX}kp_${r.from_id}_${r.to_id}_${r.type}_${idx}`,
+      from: fromNode,
+      to: toNode,
+      arrows: r.type === "related" || r.type === "compare" ? "" : "to",
+      color: { color: REL_DASH_COLOR, opacity: 0.35, highlight: REL_DASH_COLOR },
+      width: 1.5,
+      dashes: [8, 7],
+      title: `${REL_TYPE_LABELS[r.type] || r.type}：${r.from_title || ""} → ${r.to_title || ""}${r.note ? "\n" + r.note : ""}`,
+      smooth: { type: "curvedCW", roundness: 0.18 },
+    });
+  });
+
+  // 4. 遍历图上的所有子节点，有 linkTo 且目标根节点在图上 → 画虚线
+  if (!activeRelationTypes.has("related")) return;
   Object.keys(nodeMeta).forEach(nid => {
     const m = nodeMeta[nid];
     if (!m || m.level === 0 || !m.linkTo) return;  // 只处理有 linkTo 的子节点
@@ -1115,6 +1189,85 @@ function refreshRelationLinks() {
       smooth: { enabled: false },  // 关联线用直线，区别于层级曲线
     });
   });
+}
+
+function rootNodeByPointMap() {
+  const map = {};
+  Object.keys(nodeMeta).forEach(nid => {
+    const m = nodeMeta[nid];
+    if (m && m.level === 0) map[m.point_id] = Number(nid);
+  });
+  return map;
+}
+
+function rootForNode(nodeId) {
+  const meta = nodeMeta[nodeId];
+  if (!meta) return null;
+  if (meta.level === 0) return Number(nodeId);
+  let current = Number(nodeId);
+  const seen = new Set();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    let parent = null;
+    edgesDataset.forEach(e => {
+      if (parent !== null) return;
+      if (typeof e.id === "string" && e.id.startsWith(REL_EDGE_PREFIX)) return;
+      if (typeof e.id === "string" && e.id.startsWith("cust_")) return;
+      if (e.to === current) parent = e.from;
+    });
+    if (parent === null) break;
+    if (nodeMeta[parent] && nodeMeta[parent].level === 0) return Number(parent);
+    current = Number(parent);
+  }
+  const roots = rootNodeByPointMap();
+  return roots[meta.point_id] || null;
+}
+
+function collectVisibleNeighborhood(rootId) {
+  const visible = new Set([Number(rootId)]);
+  const rootMeta = nodeMeta[rootId];
+  const roots = rootNodeByPointMap();
+  if (rootMeta && rootMeta.point_id) {
+    (allRelations || []).forEach(r => {
+      if (!activeRelationTypes.has(r.type) || r.type === "belongs_to") return;
+      if (r.from_id === rootMeta.point_id && roots[r.to_id]) visible.add(roots[r.to_id]);
+      if (r.to_id === rootMeta.point_id && roots[r.from_id]) visible.add(roots[r.from_id]);
+    });
+  }
+  Array.from(visible).forEach(nid => {
+    collectDescendants(nid).forEach(childId => visible.add(Number(childId)));
+  });
+  return visible;
+}
+
+function applyNeighborhoodVisibility() {
+  if (!nodesDataset || !edgesDataset) return;
+  if (!neighborhoodMode) {
+    const updates = [];
+    nodesDataset.forEach(n => updates.push({ id: n.id, hidden: false }));
+    if (updates.length) nodesDataset.update(updates);
+    const edgeUpdates = [];
+    edgesDataset.forEach(e => edgeUpdates.push({ id: e.id, hidden: false }));
+    if (edgeUpdates.length) edgesDataset.update(edgeUpdates);
+    return;
+  }
+  const rootId = focusedNodeId ? rootForNode(focusedNodeId) : null;
+  if (!rootId) {
+    setLayoutStatus("先选节点");
+    return;
+  }
+  const visible = collectVisibleNeighborhood(rootId);
+  const nodeUpdates = [];
+  nodesDataset.forEach(n => nodeUpdates.push({ id: n.id, hidden: !visible.has(Number(n.id)) }));
+  if (nodeUpdates.length) nodesDataset.update(nodeUpdates);
+
+  const edgeUpdates = [];
+  edgesDataset.forEach(e => {
+    const fromVisible = visible.has(Number(e.from));
+    const toVisible = visible.has(Number(e.to));
+    edgeUpdates.push({ id: e.id, hidden: !(fromVisible && toVisible) });
+  });
+  if (edgeUpdates.length) edgesDataset.update(edgeUpdates);
 }
 
 /* ---------------- 节点详情面板（含卡片展示 + 隐藏按钮） ---------------- */
