@@ -6,6 +6,7 @@ let flipped = false;
 let selectedTag = "";
 let selectedMode = "subject";      // subject(按科目) / point(按知识点)
 let selectedPointIds = [];         // 按知识点模式选中的知识点 id 数组（多选）
+let selectedWrongPointIds = [];    // 错题重练限定的知识点 id 数组
 let lastReviewUndo = null;
 let sessionStartedAt = null;
 let sessionRated = 0;
@@ -168,6 +169,14 @@ function applyStudyUrlParams() {
     .flatMap(value => String(value).split(","))
     .map(value => parseInt(value, 10))
     .filter(Number.isFinite);
+  if (params.get("mode") === "wrong") {
+    selectedWrongPointIds = [...new Set(pointIds)];
+    setStudyMode("wrong");
+    if (params.get("autostart") === "1") {
+      startStudy();
+    }
+    return;
+  }
   if (!pointIds.length) return;
 
   selectedPointIds = [...new Set(pointIds)];
@@ -224,7 +233,7 @@ async function loadQueue() {
     if (selectedMode === "wrong") {
       // 错题重练：拉取当前仍在错题池里的卡片，按错误次数降序。
       // 连续答对 2 次会从错题池毕业；再次答错会重新进入。
-      queue = await API.getWrongCards(selectedTag);
+      queue = await API.getWrongCards(selectedTag, selectedWrongPointIds);
     } else {
       // 按知识点模式：只复习选中的多个知识点；按科目模式：按科目筛选
       const pids = selectedMode === "point" ? selectedPointIds : null;

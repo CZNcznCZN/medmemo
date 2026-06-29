@@ -188,7 +188,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cards/wrong":
                 # 错题（至少答错过 1 次的卡），按错误次数降序，可按学科筛选
                 tag = _get_param(parsed, "tag")
-                return self._send_json({"cards": get_wrong_cards(tag=tag)})
+                qs = parse_qs(parsed.query)
+                point_ids = [int(v) for v in qs.get("point_id", []) if v.isdigit()]
+                return self._send_json({"cards": get_wrong_cards(tag=tag, point_ids=point_ids)})
             if path == "/api/stats/reviews":
                 # 复习统计：总次数/各评分次数/正确率/错题数
                 tag = _get_param(parsed, "tag")

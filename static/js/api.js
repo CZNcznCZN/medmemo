@@ -63,7 +63,16 @@ const API = {
   undoReview: (reviewId) => API._req("POST", `/api/reviews/${reviewId}/undo`, {}),
   deleteCard: (id) => API._req("DELETE", `/api/cards/${id}`),
   updateCard: (id, data) => API._req("PUT", `/api/cards/${id}`, data),
-  getWrongCards: (tag) => API._req("GET", `/api/cards/wrong${tag ? "?tag=" + encodeURIComponent(tag) : ""}`).then(r => r.cards),
+  getWrongCards: (tag, pointIds = null) => {
+    const params = [];
+    if (tag) params.push("tag=" + encodeURIComponent(tag));
+    if (Array.isArray(pointIds)) {
+      pointIds.forEach(id => params.push("point_id=" + encodeURIComponent(id)));
+    } else if (pointIds) {
+      params.push("point_id=" + encodeURIComponent(pointIds));
+    }
+    return API._req("GET", `/api/cards/wrong${params.length ? "?" + params.join("&") : ""}`).then(r => r.cards);
+  },
   getReviewStats: (tag) => API._req("GET", `/api/stats/reviews${tag ? "?tag=" + encodeURIComponent(tag) : ""}`),
 
   getCardsByPoint: (pointId) => API._req("GET", `/api/cards/by_point?point_id=${pointId}`).then(r => r.cards),

@@ -202,13 +202,14 @@ async function loadStats() {
       const wrongEl = document.getElementById("statWrong");
       if (accEl) accEl.textContent = rs.total_reviews > 0 ? `${Math.round(rs.accuracy * 100)}%` : "-";
       renderWeakPointPanel(rs.weak_points || []);
+      loadWrongPool();
       if (wrongEl) {
         wrongEl.textContent = rs.wrong_cards || 0;
         // 有错题时点击可跳错题重练
         if (rs.wrong_cards > 0) {
           wrongEl.parentElement.style.cursor = "pointer";
           wrongEl.parentElement.title = "点击去错题重练";
-          wrongEl.parentElement.onclick = () => { window.location.href = "/study.html"; };
+          wrongEl.parentElement.onclick = () => { window.location.href = "/study.html?mode=wrong&autostart=1"; };
         }
       }
     } catch { /* 绍兴统计可选，失败不影响主统计 */ }
@@ -221,6 +222,47 @@ async function loadStats() {
 }
 
 /* ---------------- 高级字段折叠 ---------------- */
+
+async function loadWrongPool() {
+  try {
+    const cards = await API.getWrongCards(currentTag);
+    renderWrongPool(cards || []);
+  } catch {
+    renderWrongPool([]);
+  }
+}
+
+function renderWrongPool(cards) {
+  const panel = document.getElementById("wrongPoolPanel");
+  const list = document.getElementById("wrongPoolList");
+  if (!panel || !list) return;
+  if (!cards || cards.length === 0) {
+    panel.style.display = "none";
+    list.innerHTML = "";
+    return;
+  }
+
+  panel.style.display = "";
+  list.innerHTML = cards.slice(0, 12).map(card => {
+    const pointId = card.point_id;
+    const type = TYPE_LABELS[card.type] || card.type;
+    return `
+      <article class="wrong-card-item">
+        <div class="wrong-card-main">
+          <div class="wrong-card-title">${esc(card.title || card.point_title || "未命名知识点")}</div>
+          <div class="wrong-card-question">${esc(card.question || "")}</div>
+          <div class="wrong-card-meta">
+            <span>${esc(card.tag || card.point_tag || "未分类")}</span>
+            <span>${esc(type)}</span>
+            <span><b>${card.wrong_count || 0}</b> 次错误</span>
+            <span>连续正确 ${card.correct_streak || 0}</span>
+          </div>
+        </div>
+        <a class="btn-mini" href="/study.html?mode=wrong&point_id=${encodeURIComponent(pointId)}&autostart=1">重练此点</a>
+      </article>
+    `;
+  }).join("");
+}
 
 function renderWeakPointPanel(points) {
   const panel = document.getElementById("weakPanel");

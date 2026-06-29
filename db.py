@@ -957,7 +957,7 @@ def _backfill_wrong_state(c):
     )
 
 
-def get_wrong_cards(tag=None, min_wrong=1):
+def get_wrong_cards(tag=None, min_wrong=1, point_ids=None):
     """获取当前仍在错题池里的卡片，按错误次数降序。
 
     min_wrong: 至少答错几次（默认 1）。
@@ -970,13 +970,18 @@ def get_wrong_cards(tag=None, min_wrong=1):
     if tag:
         where.append("k.tag = ?")
         params.append(tag)
+    selected_point_ids = [int(pid) for pid in (point_ids or []) if pid]
+    if selected_point_ids:
+        placeholders = ",".join(["?"] * len(selected_point_ids))
+        where.append(f"c.point_id IN ({placeholders})")
+        params.extend(selected_point_ids)
     where_clause = " AND ".join(where)
     with _conn() as c:
         _backfill_wrong_state(c)
         rows = c.execute(
             f"""SELECT c.id AS id, c.id AS card_id, c.point_id, c.type, c.question, c.answer,
                        c.easiness, c.interval, c.repetition, c.due_date,
-                       k.title, k.tag,
+                       k.title, k.title AS point_title, k.tag, k.tag AS point_tag,
                        ws.wrong_count AS wrong_count,
                        ws.correct_streak AS correct_streak
                 FROM wrong_card_state ws

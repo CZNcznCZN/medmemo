@@ -200,6 +200,49 @@ body {
   color: var(--danger);
   font-weight: 700;
 }
+.wrong-pool-panel {
+  padding-top: 18px;
+}
+.wrong-pool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wrong-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--bg);
+}
+.wrong-card-main {
+  min-width: 0;
+}
+.wrong-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.wrong-card-question {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+.wrong-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.wrong-card-meta b {
+  color: var(--danger);
+}
 
 /* ---------------- 表单 ---------------- */
 
@@ -1477,6 +1520,13 @@ textarea { resize: vertical; }
   .stats-bar { grid-template-columns: 1fr 1fr; }
   .weak-head { flex-direction: column; }
   .weak-point-list { grid-template-columns: 1fr; }
+  .wrong-card-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .wrong-card-item .btn-mini {
+    text-align: center;
+  }
   .bulk-toolbar { align-items: stretch; }
   .bulk-toolbar input[type="text"], .bulk-toolbar button { width: 100%; }
   .form-grid, .card-edit-row { grid-template-columns: 1fr; }
