@@ -118,6 +118,14 @@
         <input type="search" id="pointSearch" placeholder="搜索标题、理解字段或卡片内容">
         <button type="button" id="clearPointSearch" title="清空搜索">清空</button>
       </div>
+      <div class="bulk-toolbar" id="bulkToolbar">
+        <label class="bulk-select-all"><input type="checkbox" id="bulkSelectAll"> 选择当前列表</label>
+        <span id="bulkSelectedCount" class="muted">已选 0 个</span>
+        <input type="text" id="bulkTagInput" list="tagList" placeholder="批量改到学科">
+        <button type="button" id="bulkRetagBtn">改学科</button>
+        <button type="button" id="bulkDeleteBtn">删除选中</button>
+        <button type="button" id="bulkExportBtn">导出选中/当前学科</button>
+      </div>
       <div id="pointsList" class="points-list"><p class="muted">加载中...</p></div>
     </section>
   </main>

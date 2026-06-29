@@ -34,7 +34,7 @@ import db
 from db import (
     init_db, stats, list_points, get_point, create_point, update_point, update_point_with_cards,
     delete_point, list_cards, get_due_cards, review_card, undo_review, create_card,
-    delete_card, update_card, seed_if_empty, export_all, import_backup, list_point_titles,
+    delete_card, update_card, seed_if_empty, export_all, export_subset, import_backup, list_point_titles,
     get_tags, get_relations, create_relation, delete_relation,
     batch_create_relations, get_all_relations, list_points_with_due,
     get_root_nodes, get_children, batch_create_nodes, get_cards_by_point,
@@ -232,10 +232,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"has_api_key": has_api_key()})
             if path == "/api/export":
                 # 完整备份导出：所有知识点/卡片/关联/节点/复习历史
-                data = export_all()
+                tag = _get_param(parsed, "tag")
+                qs = parse_qs(parsed.query)
+                pid_vals = qs.get("point_id", [])
+                point_ids = [int(v) for v in pid_vals if v.isdigit()]
+                data = export_subset(tag=tag, point_ids=point_ids) if tag or point_ids else export_all()
                 # 文件名带日期，方便多次导出留存多个版本
                 today = data["exported_at"][:10].replace("-", "")
-                fname = f"medmemo-backup-{today}.json"
+                scope = ""
+                if tag:
+                    scope = "-" + re.sub(r"[^A-Za-z0-9\u4e00-\u9fff_-]+", "-", tag).strip("-")
+                elif point_ids:
+                    scope = f"-selected-{len(point_ids)}"
+                fname = f"medmemo-backup{scope}-{today}.json"
                 body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
                 return self._send_download(fname, body)
 

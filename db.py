@@ -1217,6 +1217,108 @@ def export_all():
     }
 
 
+def export_subset(tag=None, point_ids=None):
+    """Export a restorable backup containing only selected knowledge points.
+
+    Dependent rows are included only when they belong to the selected point set.
+    IDs are preserved so the backup can still be restored with the normal
+    full-restore path.
+    """
+    selected_ids = {int(pid) for pid in (point_ids or []) if pid}
+    with _conn() as c:
+        if tag:
+            selected_ids.update(
+                row["id"] for row in c.execute(
+                    "SELECT id FROM knowledge_points WHERE tag = ?",
+                    (tag,),
+                ).fetchall()
+            )
+        if not selected_ids:
+            raise ValueError("导出范围为空，请先选择知识点或学科。")
+
+        placeholders = ",".join(["?"] * len(selected_ids))
+        point_params = list(selected_ids)
+        exported = {key: [] for key in _BACKUP_TABLES}
+        exported["points"] = [
+            dict(r) for r in c.execute(
+                f"SELECT * FROM knowledge_points WHERE id IN ({placeholders}) ORDER BY id",
+                point_params,
+            ).fetchall()
+        ]
+        exported["cards"] = [
+            dict(r) for r in c.execute(
+                f"SELECT * FROM cards WHERE point_id IN ({placeholders}) ORDER BY id",
+                point_params,
+            ).fetchall()
+        ]
+        card_ids = [row["id"] for row in exported["cards"]]
+        node_rows = [
+            dict(r) for r in c.execute(
+                f"SELECT * FROM knowledge_nodes WHERE point_id IN ({placeholders}) ORDER BY id",
+                point_params,
+            ).fetchall()
+        ]
+        exported["nodes"] = node_rows
+        node_ids = [row["id"] for row in node_rows]
+
+        exported["relations"] = [
+            dict(r) for r in c.execute(
+                f"""SELECT * FROM knowledge_relations
+                    WHERE from_id IN ({placeholders}) AND to_id IN ({placeholders})
+                    ORDER BY id""",
+                point_params + point_params,
+            ).fetchall()
+        ]
+        exported["comparison_dims"] = [
+            dict(r) for r in c.execute(
+                f"SELECT * FROM comparison_dims WHERE point_id IN ({placeholders}) ORDER BY id",
+                point_params,
+            ).fetchall()
+        ]
+
+        if card_ids:
+            card_placeholders = ",".join(["?"] * len(card_ids))
+            exported["reviews"] = [
+                dict(r) for r in c.execute(
+                    f"SELECT * FROM reviews WHERE card_id IN ({card_placeholders}) ORDER BY id",
+                    card_ids,
+                ).fetchall()
+            ]
+            review_ids = [row["id"] for row in exported["reviews"]]
+            exported["wrong_card_state"] = [
+                dict(r) for r in c.execute(
+                    f"SELECT * FROM wrong_card_state WHERE card_id IN ({card_placeholders}) ORDER BY card_id",
+                    card_ids,
+                ).fetchall()
+            ]
+            if review_ids:
+                review_placeholders = ",".join(["?"] * len(review_ids))
+                exported["review_snapshots"] = [
+                    dict(r) for r in c.execute(
+                        f"SELECT * FROM review_snapshots WHERE review_id IN ({review_placeholders}) ORDER BY review_id",
+                        review_ids,
+                    ).fetchall()
+                ]
+
+        if node_ids:
+            node_placeholders = ",".join(["?"] * len(node_ids))
+            exported["custom_edges"] = [
+                dict(r) for r in c.execute(
+                    f"""SELECT * FROM custom_edges
+                        WHERE from_node IN ({node_placeholders}) AND to_node IN ({node_placeholders})
+                        ORDER BY id""",
+                    node_ids + node_ids,
+                ).fetchall()
+            ]
+
+    return {
+        "version": 2,
+        "exported_at": _now(),
+        "scope": {"tag": tag or "", "point_ids": sorted(selected_ids)},
+        **exported,
+    }
+
+
 def write_backup_snapshot(prefix="medmemo-backup"):
     """把当前学习数据写入用户数据目录下的 backups，返回文件路径。
 

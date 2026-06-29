@@ -11,6 +11,7 @@ let currentTag = "";        // 当前筛选的科目
 let currentPointsCache = [];  // 当前列表知识点（搜索用）
 let currentCardsByPoint = {}; // 当前列表卡片缓存（搜索用）
 let relModalPointId = null; // 当前打开关联弹窗的知识点 id
+let selectedBulkPointIds = new Set();
 
 document.addEventListener("DOMContentLoaded", () => {
   loadTags();
@@ -22,6 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindPointEditModal();
   bindBackupImport();
   bindPointSearch();
+  bindBulkToolbar();
   addCardRow("forward");
 });
 
@@ -353,6 +355,105 @@ function bindPointSearch() {
   });
 }
 
+function getVisiblePointIds() {
+  const query = (document.getElementById("pointSearch")?.value || "").trim().toLowerCase();
+  return currentPointsCache
+    .filter(p => pointMatchesSearch(p, currentCardsByPoint[p.id] || [], query))
+    .map(p => p.id);
+}
+
+function updateBulkToolbar() {
+  const visibleIds = getVisiblePointIds();
+  const selectedVisible = visibleIds.filter(id => selectedBulkPointIds.has(id));
+  const countEl = document.getElementById("bulkSelectedCount");
+  const selectAll = document.getElementById("bulkSelectAll");
+  const retagBtn = document.getElementById("bulkRetagBtn");
+  const deleteBtn = document.getElementById("bulkDeleteBtn");
+  const hasSelection = selectedBulkPointIds.size > 0;
+  if (countEl) countEl.textContent = `已选 ${selectedBulkPointIds.size} 个`;
+  if (selectAll) {
+    selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+    selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+  }
+  if (retagBtn) retagBtn.disabled = !hasSelection;
+  if (deleteBtn) deleteBtn.disabled = !hasSelection;
+}
+
+function bindBulkToolbar() {
+  const selectAll = document.getElementById("bulkSelectAll");
+  const retagBtn = document.getElementById("bulkRetagBtn");
+  const deleteBtn = document.getElementById("bulkDeleteBtn");
+  const exportBtn = document.getElementById("bulkExportBtn");
+  if (!selectAll || !retagBtn || !deleteBtn || !exportBtn) return;
+
+  selectAll.addEventListener("change", () => {
+    getVisiblePointIds().forEach(id => {
+      if (selectAll.checked) selectedBulkPointIds.add(id);
+      else selectedBulkPointIds.delete(id);
+    });
+    renderPointsList();
+  });
+
+  retagBtn.addEventListener("click", async () => {
+    const target = document.getElementById("bulkTagInput").value.trim();
+    const ids = [...selectedBulkPointIds];
+    if (!target) {
+      alert("请输入要批量改到的学科。");
+      return;
+    }
+    if (!ids.length) return;
+    if (!confirm(`确定把 ${ids.length} 个知识点改到「${target}」吗？`)) return;
+    retagBtn.disabled = true;
+    try {
+      await Promise.all(ids.map(id => API.updatePoint(id, { tag: target })));
+      selectedBulkPointIds.clear();
+      currentTag = "";
+      await loadTags();
+      await loadStats();
+      await loadPoints();
+    } catch (e) {
+      alert("批量改学科失败：" + e.message);
+    } finally {
+      updateBulkToolbar();
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    const ids = [...selectedBulkPointIds];
+    if (!ids.length) return;
+    if (!confirm(`确定删除选中的 ${ids.length} 个知识点及其卡片、复习记录和网络关系吗？此操作不可恢复。`)) return;
+    deleteBtn.disabled = true;
+    try {
+      for (const id of ids) {
+        await API.deletePoint(id);
+      }
+      selectedBulkPointIds.clear();
+      await loadTags();
+      await loadStats();
+      await loadPoints();
+    } catch (e) {
+      alert("批量删除失败：" + e.message);
+    } finally {
+      updateBulkToolbar();
+    }
+  });
+
+  exportBtn.addEventListener("click", () => {
+    const ids = [...selectedBulkPointIds];
+    if (ids.length) {
+      window.location.href = `/api/export?${ids.map(id => `point_id=${encodeURIComponent(id)}`).join("&")}`;
+      return;
+    }
+    const tag = currentTag || document.getElementById("bulkTagInput").value.trim();
+    if (!tag) {
+      alert("请先筛选一个学科、输入学科名，或勾选要导出的知识点。");
+      return;
+    }
+    window.location.href = `/api/export?tag=${encodeURIComponent(tag)}`;
+  });
+  updateBulkToolbar();
+}
+
 async function loadPoints() {
   const box = document.getElementById("pointsList");
   try {
@@ -360,7 +461,9 @@ async function loadPoints() {
     if (points.length === 0) {
       currentPointsCache = [];
       currentCardsByPoint = {};
+      selectedBulkPointIds.clear();
       updatePointsCount(0, 0);
+      updateBulkToolbar();
       box.innerHTML = `<div class="muted">${currentTag ? `「${esc(currentTag)}」分类下暂无知识点。` : '还没有知识点。去「AI 导入」粘贴教材让 AI 帮你拆卡，或在上方手动添加。'}</div>`;
       return;
     }
@@ -370,6 +473,8 @@ async function loadPoints() {
       (cardsByPoint[c.point_id] = cardsByPoint[c.point_id] || []).push(c);
     });
     currentPointsCache = points;
+    const existingIds = new Set(points.map(p => p.id));
+    selectedBulkPointIds = new Set([...selectedBulkPointIds].filter(id => existingIds.has(id)));
     currentCardsByPoint = cardsByPoint;
     renderPointsList();
   } catch (e) {
@@ -401,14 +506,25 @@ function renderPointsList() {
 
   if (filtered.length === 0) {
     box.innerHTML = `<div class="muted">${query ? `没有找到包含「${esc(query)}」的知识点。` : "暂无知识点。"}</div>`;
+    updateBulkToolbar();
     return;
   }
 
   box.innerHTML = filtered.map(p => renderPoint(p, currentCardsByPoint[p.id] || [])).join("");
   bindPointListActions(box);
+  updateBulkToolbar();
 }
 
 function bindPointListActions(box) {
+  box.querySelectorAll(".point-select").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const id = parseInt(cb.value, 10);
+      if (cb.checked) selectedBulkPointIds.add(id);
+      else selectedBulkPointIds.delete(id);
+      cb.closest(".point-item")?.classList.toggle("selected", cb.checked);
+      updateBulkToolbar();
+    });
+  });
   box.querySelectorAll(".del-point").forEach(btn => {
     btn.addEventListener("click", async () => {
       if (!confirm("删除该知识点及其所有卡片和关联？")) return;
@@ -443,13 +559,17 @@ function renderPoint(p, cards) {
   const sizeBadge = p.size === "small"
     ? `<span class="size-badge size-small">🔖 小</span>`
     : "";
+  const selected = selectedBulkPointIds.has(p.id);
   return `
-    <div class="point-item">
+    <div class="point-item ${selected ? "selected" : ""}">
       <div class="point-head">
-        <div>
-          <span class="point-title">${esc(p.title)}</span>
-          <span class="point-tag">${esc(p.tag)}</span>
-          ${sizeBadge}
+        <div class="point-title-wrap">
+          <input type="checkbox" class="point-select" value="${p.id}" ${selected ? "checked" : ""} aria-label="选择知识点">
+          <div>
+            <span class="point-title">${esc(p.title)}</span>
+            <span class="point-tag">${esc(p.tag)}</span>
+            ${sizeBadge}
+          </div>
         </div>
         <div class="point-actions">
           <button class="edit-point" data-id="${p.id}">编辑</button>
